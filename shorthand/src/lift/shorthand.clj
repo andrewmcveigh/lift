@@ -36,9 +36,9 @@
 (basetype Value     [value])
 (basetype Predicate [pred])
 (basetype Record    [kvs])
-(basetype List      [type])
-(basetype Vector    [type])
-(basetype Set       [type])
+(basetype List      [a])
+(basetype Vector    [a])
+(basetype Set       [a])
 (basetype Pair      [a b])
 (basetype Tuple     [fields])
 (basetype Function  [args return])
@@ -63,13 +63,13 @@
   (.write writer (format "[%s]" (string/join " " (map pr-str (.-fields x))))))
 
 (defmethod print-method List [x writer]
-  (.write writer (format "(%s)" (pr-str (.-type x)))))
+  (.write writer (format "(%s)" (pr-str (.-a x)))))
 
 (defmethod print-method Vector [x writer]
-  (.write writer (format "[%s]" (pr-str (.-type x)))))
+  (.write writer (format "[%s]" (pr-str (.-a x)))))
 
 (defmethod print-method Set [x writer]
-  (.write writer (format "#{%s}" (pr-str (.-type x)))))
+  (.write writer (format "#{%s}" (pr-str (.-a x)))))
 
 (defmethod print-method Function [x writer]
   (.write writer (format "(%s -> %s)"
@@ -96,11 +96,11 @@
                          ~(to-spec (.-b x))
                          ~@(map to-spec (.-cs x))))
   List
-  (to-spec [x] `(s/coll-of ~(to-spec ~(.-a x))))
+  (to-spec [x] `(s/coll-of ~(to-spec (.-a x))))
   Vector
-  (to-spec [x] `(s/coll-of ~(to-spec ~(.-a x)) :kind vector?))
+  (to-spec [x] `(s/coll-of ~(to-spec (.-a x)) :kind vector?))
   Set
-  (to-spec [x] `(s/coll-of ~(to-spec ~(.-a x)) :kind set?))
+  (to-spec [x] `(s/coll-of ~(to-spec (.-a x)) :kind set?))
   Function
   (to-spec [x] `(s/fspec
                  :args ~(->> (.-args x)
