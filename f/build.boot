@@ -3,7 +3,7 @@
 (def +description+ "Efficient Functors for Clojure")
 
 (def dependencies
-  '[[org.clojure/clojure "1.9.0-alpha15"]])
+  '[[org.clojure/clojure "1.9.0-alpha16"]])
 
 (def test-dependencies
   '[[org.clojure/test.check "0.9.0"]])
@@ -17,7 +17,7 @@
       :description +description+
       :license {"Eclipse Public License"
                 "http://www.eclipse.org/legal/epl-v10.html"}
-      :scm {:url "git@github.com:andrewmcveigh/f.git"}}
+      :scm {:url "git@github.com:andrewmcveigh/lift.git"}}
  push {:repo "clojars"}
  target {:dir #{"target"}})
 
