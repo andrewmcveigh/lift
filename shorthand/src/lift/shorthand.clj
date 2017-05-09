@@ -1,9 +1,14 @@
 (ns lift.shorthand
+  ;; (:refer-clojure :exclude [defn])
   (:require
    [clojure.spec.alpha :as s]
    [clojure.spec.test.alpha :as t]
    [clojure.string :as string]
    [orchestra.spec.test :as o]))
+
+(alias 'c 'clojure.core)
+
+(declare type-seq parse-type-sig)
 
 (def type-env (atom {}))
 
@@ -13,8 +18,6 @@
         name (some-> v .sym str)]
     (when (and ns name)
       (symbol ns name))))
-
-(alias 'c 'clojure.core)
 
 (defprotocol Base (base [_]))
 
@@ -39,9 +42,10 @@
      (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
      ~@extends))
 
-(defprotocol Type (to-spec [_]))
+(defprotocol ToSpec (to-spec [_]))
 
 (basetype Unit      [])
+(basetype TType     [])
 (basetype Value     [value])
 (basetype Var       [var])
 (basetype Predicate [pred])
@@ -51,15 +55,31 @@
 (basetype Set       [a])
 (basetype Pair      [a b])
 (basetype Tuple     [fields])
-(basetype Function  [args return])
-(basetype Spec      [op args])
-(basetype DSpec     [op vars args])
+(basetype Expr      [expr])
+(basetype Type      [type args])
 
-(defn type-var? [x] (instance? Var x))
-(defn dspec?    [x] (instance? DSpec x))
+(basetype Function  [args return]
+  clojure.lang.ISeq
+  (seq [_] (concat args [return])))
+
+(basetype Spec      [op args])
+
+(basetype DSpec     [op vars args]
+  clojure.lang.ISeq
+  (seq [_] (apply list op args)))
+
+(defn type-var?   [x] (instance? Var x))
+(defn ttype?      [x] (instance? TType x))
+(defn value?      [x] (instance? Value x))
+(defn predicate?  [x] (instance? Predicate x))
+(defn dspec?      [x] (instance? DSpec x))
+(defn value-type? [x] (not (ttype? x)))
 
 (defmethod print-method Unit [x writer]
   (.write writer "()"))
+
+(defmethod print-method TType [x writer]
+  (.write writer "type?"))
 
 (defmethod print-method Value [x writer]
   (.write writer (str (.-value x))))
@@ -88,6 +108,14 @@
 (defmethod print-method Set [x writer]
   (.write writer (format "#{%s}" (pr-str (.-a x)))))
 
+(defmethod print-method Expr [x writer]
+  (.write writer (format "%s" (pr-str (.-expr x)))))
+
+(defmethod print-method Type [x writer]
+  (.write writer (format "%s %s"
+                         (pr-str (.-type x))
+                         (string/join " " (map pr-str (.-args x))))))
+
 (defmethod print-method Function [x writer]
   (.write writer (format "(%s -> %s)"
                          (string/join " -> " (map pr-str (.-args x)))
@@ -103,10 +131,10 @@
         sig (get-in @type-env [`dependent (res op) :sig])
         dep-type (first (type-seq sig))]
     (.write writer (format "(%s: %s ** %s %s)"
-                                 (string/join ", " (map pr-str (.-vars x)))
-                                 (pr-str dep-type)
-                                 op
-                                 (string/join " " (map pr-str (.-args x)))))))
+                           (string/join ", " (map pr-str (.-vars x)))
+                           (pr-str dep-type)
+                           op
+                           (string/join " " (map pr-str (.-args x)))))))
 
 (defn idx->key [i]
   (keyword (str (char (+ i 97)))))
@@ -157,7 +185,10 @@
                                    v))))
                  (cons 'and)))))))
 
-(extend-protocol Type
+(extend-protocol ToSpec
+  TType
+  (to-spec [x] `(s/or :fn   (s/spec fn?     :gen #(s/gen #{int?}))
+                      :spec (s/spec s/spec? :gen #(s/gen #{(s/spec int?)}))))
   Value
   (to-spec [x] (.-value x))
   Var
@@ -191,8 +222,6 @@
   DSpec
   (to-spec [x] `(~(.-op x) ~@(map to-spec (.-args x)))))
 
-(to-spec (parse-type-sig '(vect? n int? -> vect? n int?)))
-
 (defn not->? [x] (not= x '->))
 
 (defn ->? [decl]
@@ -221,18 +250,51 @@
 (s/def ::n-tuple-a
   (s/and vector? (s/cat :a ::type :b ::type :cs (s/+ ::type))))
 
+(s/def ::coll
+  (s/or :list ::list-a
+        :vect ::vector-a
+        :set  ::set-a
+        :pair ::pair-a
+        :tupl ::n-tuple-a))
+
+(s/def ::func-sig
+  (s/and seq? #(some #{'->} %)))
+
+(s/def ::type-sig
+  (s/cat :op ::predicate :args (s/+ ::type)))
+
+(s/def ::type-expr
+  (s/and seq?
+         (s/cat :op symbol?
+                :args (s/+ (s/or :expr-var ::type-var
+                                 :expr-val any?)))))
+
+(s/def ::spec
+  (s/cat :op symbol?
+         :args (s/+ (s/or :spec-type ::type
+                          :spec-var  ::type-var
+                          :spec-any  any?))))
+
 (s/def ::type
-  (s/alt :pred ::predicate
-         :bfun (s/and seq? #(some #{'->} %))
-         :coll (s/or :list ::list-a
-                     :vect ::vector-a
-                     :set  ::set-a
-                     :pair ::pair-a
-                     :tupl ::n-tuple-a)
-         :spec (s/cat :op symbol?
-                      :args (s/+ (s/or :spec-type ::type
-                                       :spec-var  ::type-var
-                                       :spec-any  any?)))))
+  (s/or :type #{'type?}
+        :pred ::predicate
+        :tvar ::type-var
+        :bfun ::func-sig
+        :coll ::coll
+        :tsig ::type-sig
+        :expr ::type-expr
+        :spec ::spec))
+
+(s/def ::re-type
+  (s/alt :type #{'type?}
+         :pred ::predicate
+         :tvar ::type-var
+         :bfun ::func-sig
+         :coll ::coll
+         :tsig ::type-sig
+         :expr ::type-expr
+         :spec ::spec))
+
 
 ;; [n, int? ** vect? n int?]
 ;; [2 [3 4]]
@@ -260,13 +322,12 @@
 ;;;   - So what do we call it?
 ;;;   - cplx
 
-(declare parse-type-sig)
-
 (defn dependent? [x]
   (contains? (get @type-env `dependent) (res x)))
 
 (defn parse-spec [[t x]]
   (case t
+    :type (TType.)
     :pred (Predicate. x)
     :bfun (parse-type-sig x)
     :coll (parse-spec x)
@@ -278,6 +339,13 @@
     :tupl (Tuple. (concat [(parse-spec (:a x))
                            (parse-spec (:b x))]
                           (map parse-spec (:cs x))))
+    :tsig (Type. (:op x) (map parse-spec (:args x)))
+    ;; is a typesig, not a spec
+    ;; but what is it?
+    ;; do I know yet? it's a function that returns a type?
+    :expr (Expr. (apply list (:op x) (map parse-spec (:args x))))
+    :expr-var (Var. x)
+    :expr-val (Value. x)
     :spec (let [{:keys [op args]} x]
             (if (dependent? op)
               (let [args (map parse-spec args)]
@@ -286,6 +354,15 @@
     :spec-type (parse-spec x)
     :spec-var  (Var. x)
     :spec-any  (Value. x)))
+
+;; (to-spec (parse-spec (s/conform ::re-type '(vect? (+ n m) int?))))
+
+;; (parse-spec
+;;  '[:tsig
+;;    {:op vect?,
+;;     :args
+;;     [[:expr {:op + :args [[:expr-var n] [:expr-var m]]}]
+;;      [:pred int?]]}])
 
 (defn type-seq [coll]
   (if coll
@@ -306,7 +383,7 @@
 (defmacro sdef [f & sig]
   `(s/def ~f ~(to-spec (parse-type-sig sig))))
 
-(to-spec (parse-type-sig '(vect? n int? -> vect? n int?)))
+;; (to-spec (parse-type-sig '(vect? n int? -> vect? n int?)))
 
 (defn check-ns [ns]
   (let [syms (set (filter #(and (symbol? %) (= (name ns) (namespace %)))
@@ -329,27 +406,77 @@
            (prn res#)
            (:clojure.spec.alpha/problems (ex-data res#))))))
 
-(defmacro tdef
-  {:style/indent 2}
-  [name & args]
-  `(do
-     (defn ~name ~@args)
-     (check ~name 1)))
-
-(defmacro dependent
-  {:style/indent :defn}
-  [t sig args f expr]
-  (swap! type-env assoc-in [`dependent (res t)] {:sig sig :args args :f f})
-  `(defn ~t ~args ~expr))
+;; (defmacro dependent
+;;   {:style/indent :defn}
+;;   [t sig args f expr]
+;;   (let [sig sig]
+;;     (swap! type-env
+;;            assoc-in
+;;            [`dependent (res t)] {:sig sig :args args :f f}))
+;;   `(defn ~t ~args ~expr))
 
 ;;; We need a spec
 ;;; That also returns a value to the env when called with a value
-;;; (fn [a] (
 
 ;;; Something that is, a) dependent, and b) -> type? is a spec/type
 ;;; This must put some information into the type environment
-(dependent vect? (nat-int? -> type? -> type?) [n t] count
-  (s/coll-of t :into [] :kind vector?))
+
+;; (dependent vect? (nat-int? -> type? -> type?) [n t] count
+;;   (s/coll-of t :into [] :kind vector?))
+
+;; (defmacro defn
+;;   {:style/indent 2}
+;;   [name & args]
+;;   `(let [v# (c/defn ~name ~@args)]
+;;      (if ~(contains? (s/registry) (res name))
+;;        (let [res# (check ~name 1)]
+;;          (if (true? res#)
+;;            v#
+;;            (do
+;;              (ns-unmap *ns* ~name)
+;;              res#)))
+;;        v#)))
+
+;; (sdef length nat-int? -> type?)
+;; (defn length [n]
+;;   (fn [xs] (= (count xs) n)))
+
+;; (s/conform :clojure.core.specs.alpha/defn-args
+;;            '(vect? [{n count} t] (nil)))
+;; (s/conform :clojure.core.specs.alpha/defn-args
+;;            '(vect? [{:keys [thing]} t] (nil)))
+
+;; (s/conform )
+;; {:name vect?,
+;;  :bs
+;;  [:arity-1
+;;   {:args {:args [[:map {n count}] [:sym t]]}, :body [:body [(nil)]]}]}
+
+;; (c/defn vvv [{n count}]
+;;   n
+;;   )
+
+;; (vvv 1)
+
+;; (sdef vect?, nat-int? -> type? -> type?)
+;; (defn vect? [n t]
+;;   (s/and (s/coll-of t :into [] :kind vector?)
+;;          (length n)))
+
+
+;; '(data Vect (len :- Nat -> elem :- Type -> Type)
+;;    (Nil  (Vect Z elem))
+;;    (cons (x :- elem -> xs :- Vect len elem -> Vect (S len) elem)))
+
+;;: data Vect : (len : Nat) -> (elem : Type) -> Type where
+;;:   Nil  : Vect Z elem
+;;:   (::) : (x : elem) -> (xs : Vect len elem) -> Vect (S len) elem
+
+;; what is a type in this?
+
+;; vect? : nat-int? -> type? -> type?
+;; vect? Z t = vect
+;; ()
 
 ;; (s/conform (vect? 2 int?) [3]) -> should fail
 
