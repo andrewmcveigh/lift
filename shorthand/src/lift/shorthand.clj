@@ -19,6 +19,23 @@
     (when (and ns name)
       (symbol ns name))))
 
+(def word #"-|_|(?=[A-Z]+)")
+
+(defn kebab-case [s]
+  (->> (string/split s word)
+       (c/map string/lower-case)
+       (string/join "-")))
+
+(defn predicate-name [x]
+  (letfn [(predicate-ize [s]
+            (->> (kebab-case s)
+                 (format "%s-type?")))]
+    (cond (symbol? x)  (c/symbol (predicate-ize (c/name x)))
+          (keyword? x) (c/keyword (predicate-ize (c/name x)))
+          (string? x)  (predicate-ize x)
+          :else        (throw (ex-info (str "Don't know how to kebab:" x)
+                                       {:type :unknown-type :x x})))))
+
 (defprotocol Base (base [_]))
 
 (defn basetype? [x]
@@ -30,17 +47,19 @@
   {:style/indent 2}
   [name fields & extends]
   ;; Should cache the hashcode in a mutable field
-  `(deftype ~name ~fields
-     Base
-     (base [_] name)
-     clojure.lang.IHashEq
-     (equals [_# ~'other]
-       (and (instance? ~name ~'other)
-            ~@(map (fn [n] `(= (. ~'other ~(symbol (str \- n))) ~n))
-                   fields)))
-     (hasheq [_#] (.hasheq (BaseType. ~name ~fields)))
-     (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
-     ~@extends))
+  `(do
+     (deftype ~name ~fields
+       Base
+       (base [_] name)
+       clojure.lang.IHashEq
+       (equals [_# ~'other]
+         (and (instance? ~name ~'other)
+              ~@(map (fn [n] `(= (. ~'other ~(symbol (str \- n))) ~n))
+                     fields)))
+       (hasheq [_#] (.hasheq (BaseType. ~name ~fields)))
+       (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
+       ~@extends)
+     (defn ~(predicate-name name) [~'x] (instance? ~name ~'x))))
 
 (defprotocol ToSpec (to-spec [_]))
 
@@ -67,13 +86,6 @@
 (basetype DSpec     [op vars args]
   clojure.lang.ISeq
   (seq [_] (apply list op args)))
-
-(defn type-var?   [x] (instance? Var x))
-(defn ttype?      [x] (instance? TType x))
-(defn value?      [x] (instance? Value x))
-(defn predicate?  [x] (instance? Predicate x))
-(defn dspec?      [x] (instance? DSpec x))
-(defn value-type? [x] (not (ttype? x)))
 
 (defmethod print-method Unit [x writer]
   (.write writer "()"))
@@ -140,12 +152,12 @@
   (keyword (str (char (+ i 97)))))
 
 (defn type-var [dspec]
-  (when (dspec? dspec)
+  (when (d-spec-type? dspec)
     (when-let [v (first (.-vars dspec))]
-      (when (type-var? v) v))))
+      (when (var-type? v) v))))
 
 (defn op [dspec]
-  (when (dspec? dspec) (.-op dspec)))
+  (when (d-spec-type? dspec) (.-op dspec)))
 
 (defn parse-fn
   "given a list of args and return, find which elements are:
@@ -349,7 +361,7 @@
     :spec (let [{:keys [op args]} x]
             (if (dependent? op)
               (let [args (map parse-spec args)]
-                (DSpec. op (filter type-var? args) args))
+                (DSpec. op (filter var-type? args) args))
               (Spec.  op (map parse-spec args))))
     :spec-type (parse-spec x)
     :spec-var  (Var. x)
