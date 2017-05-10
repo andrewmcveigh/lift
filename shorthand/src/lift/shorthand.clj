@@ -36,118 +36,6 @@
           :else        (throw (ex-info (str "Don't know how to kebab:" x)
                                        {:type :unknown-type :x x})))))
 
-(defprotocol Base (base [_]))
-
-(defn basetype? [x]
-  (instance? Base x))
-
-(defrecord BaseType [name fields])
-
-(defmacro basetype
-  {:style/indent 2}
-  [name fields & extends]
-  ;; Should cache the hashcode in a mutable field
-  `(do
-     (deftype ~name ~fields
-       Base
-       (base [_] name)
-       clojure.lang.IHashEq
-       (equals [_# ~'other]
-         (and (instance? ~name ~'other)
-              ~@(map (fn [n] `(= (. ~'other ~(symbol (str \- n))) ~n))
-                     fields)))
-       (hasheq [_#] (.hasheq (BaseType. ~name ~fields)))
-       (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
-       ~@extends)
-     (defn ~(predicate-name name) [~'x] (instance? ~name ~'x))))
-
-(defprotocol ToSpec (to-spec [_]))
-
-(basetype Unit      [])
-(basetype TType     [])
-(basetype Value     [value])
-(basetype Var       [var])
-(basetype Predicate [pred])
-(basetype Record    [kvs])
-(basetype List      [a])
-(basetype Vector    [a])
-(basetype Set       [a])
-(basetype Pair      [a b])
-(basetype Tuple     [fields])
-(basetype Expr      [expr])
-(basetype Type      [type args])
-
-(basetype Function  [args return]
-  clojure.lang.ISeq
-  (seq [_] (concat args [return])))
-
-(basetype Spec      [op args])
-
-(basetype DSpec     [op vars args]
-  clojure.lang.ISeq
-  (seq [_] (apply list op args)))
-
-(defmethod print-method Unit [x writer]
-  (.write writer "()"))
-
-(defmethod print-method TType [x writer]
-  (.write writer "type?"))
-
-(defmethod print-method Value [x writer]
-  (.write writer (str (.-value x))))
-
-(defmethod print-method Var [x writer]
-  (.write writer (str (.-var x))))
-
-(defmethod print-method Predicate [x writer]
-  (.write writer (str (.-pred x))))
-
-(defmethod print-method Record [x writer]
-  (.write writer (pr-str (apply array-map (.-kvs x)))))
-
-(defmethod print-method Pair [x writer]
-  (.write writer (format "[%s %s]" (pr-str (.-a x)) (pr-str (.-b x)))))
-
-(defmethod print-method Tuple [x writer]
-  (.write writer (format "[%s]" (string/join " " (map pr-str (.-fields x))))))
-
-(defmethod print-method List [x writer]
-  (.write writer (format "(%s)" (pr-str (.-a x)))))
-
-(defmethod print-method Vector [x writer]
-  (.write writer (format "[%s]" (pr-str (.-a x)))))
-
-(defmethod print-method Set [x writer]
-  (.write writer (format "#{%s}" (pr-str (.-a x)))))
-
-(defmethod print-method Expr [x writer]
-  (.write writer (format "%s" (pr-str (.-expr x)))))
-
-(defmethod print-method Type [x writer]
-  (.write writer (format "%s %s"
-                         (pr-str (.-type x))
-                         (string/join " " (map pr-str (.-args x))))))
-
-(defmethod print-method Function [x writer]
-  (.write writer (format "(%s -> %s)"
-                         (string/join " -> " (map pr-str (.-args x)))
-                         (pr-str (.-return x)))))
-
-(defmethod print-method Spec [x writer]
-  (.write writer (format "%s %s"
-                         (.-op x)
-                         (string/join " " (map pr-str (.-args x))))))
-
-(defmethod print-method DSpec [x writer]
-  (let [op (.-op x)
-        sig (get-in @type-env [`dependent (res op) :sig])
-        dep-type (first (type-seq sig))]
-    (.write writer (format "(%s: %s ** %s %s)"
-                           (string/join ", " (map pr-str (.-vars x)))
-                           (pr-str dep-type)
-                           op
-                           (string/join " " (map pr-str (.-args x)))))))
-
 (defn idx->key [i]
   (keyword (str (char (+ i 97)))))
 
@@ -159,36 +47,25 @@
 (defn op [dspec]
   (when (d-spec-type? dspec) (.-op dspec)))
 
-(defn parse-fn
-  "given a list of args and return, find which elements are:
-   a) dependent, and if there are two or more
-   b) if they are dependent on each other, then
-   c) pull the respective f from env by op
-   d) write into :fn spec
+(defn pair-ks->-type-vars [args return]
+  (map (fn [k v] [[k (op v)] {(type-var v) [k]}])
+       (conj (map (juxt (constantly :args) idx->key)
+                  (range 0 (count args))) [:ret])
+       (conj args return)))
 
-   we know that (fa :a) and (fr :ret) must be equal because they use n
-   :fn (let [fa (:f env-a)
-             fr (:f env-r)]
-         (fn [x] (= (-> x :args :a fa)
-                    (-> x :ret fr))))"
-  [f]
-  (let [args   (.-args f)
-        return (.-return f)
-        tvars  (keep type-var (conj args return))]
+(defn dependent-fn [[[k v]]]
+  [k (get-in @type-env [`dependent (res v) :f])])
+
+(defn parse-fn [args return]
+  (let [tvars (keep type-var (conj args return))]
     (when (> (count tvars) 1)
-      (let [fs-vs (->> (conj args return)
-                       (map (fn [k v] [[k (op v)] {(type-var v) [k]}])
-                            (conj (map (juxt (constantly :args) idx->key)
-                                       (range 0 (count args))) [:ret])))
-            fs (->> fs-vs
-                    (map (fn [[[k v]]]
-                           [k (get-in @type-env [`dependent (res v) :f])]))
-                    (into {}))
-            vs (->> (map second fs-vs)
-                    (apply merge-with concat {})
-                    (#(select-keys % tvars))
-                    (remove (fn [[_ v]] (< (count v) 2)))
-                    (into {}))]
+      (let [fs-vs (pair-ks->-type-vars args return)
+            fs    (->> fs-vs (map dependent-fn) (into {}))
+            vs    (->> (map second fs-vs)
+                       (apply merge-with concat {})
+                       (#(select-keys % tvars))
+                       (remove (fn [[_ v]] (< (count v) 2)))
+                       (into {}))]
         `(fn [~'x]
            ~(->> vs
                  (map (fn [[k v]]
@@ -197,42 +74,148 @@
                                    v))))
                  (cons 'and)))))))
 
-(extend-protocol ToSpec
-  TType
-  (to-spec [x] `(s/or :fn   (s/spec fn?     :gen #(s/gen #{int?}))
-                      :spec (s/spec s/spec? :gen #(s/gen #{(s/spec int?)}))))
-  Value
-  (to-spec [x] (.-value x))
-  Var
-  (to-spec [x] (list 'quote(.-var x)))
-  Predicate
-  (to-spec [x] (.-pred x))
-  Pair
-  (to-spec [x] `(s/tuple ~(to-spec (.-a x)) ~(to-spec (.-b x))))
-  Tuple
-  (to-spec [x] `(s/tuple ~(to-spec (.-a x))
-                         ~(to-spec (.-b x))
-                         ~@(map to-spec (.-cs x))))
-  List
-  (to-spec [x] `(s/coll-of ~(to-spec (.-a x))))
-  Vector
-  (to-spec [x] `(s/coll-of ~(to-spec (.-a x)) :kind vector?))
-  Set
-  (to-spec [x] `(s/coll-of ~(to-spec (.-a x)) :kind set?))
-  Function
-  (to-spec [x] (let [f (parse-fn x)]
-                 `(s/fspec
-                   :args ~(->> (.-args x)
-                               (map-indexed
-                                (fn [i v] [(idx->key i) (to-spec v)]))
-                               (apply concat)
-                               (cons `s/cat))
-                   ~@(when f [:fn f])
-                   :ret ~(to-spec (.-return x)))))
-  Spec
-  (to-spec [x] `(~(.-op x) ~@(map to-spec (.-args x))))
-  DSpec
-  (to-spec [x] `(~(.-op x) ~@(map to-spec (.-args x)))))
+(defprotocol Base (base [_]))
+
+(defprotocol Show (show [_]))
+
+(defn basetype? [x]
+  (instance? Base x))
+
+(defrecord BaseType [name fields])
+
+(defmacro basetype
+  {:style/indent [2 1]}
+  [name fields & extends]
+  ;; Should cache the hashcode in a mutable field
+  `(do
+     (deftype ~name ~(conj fields)
+       Base
+       (base [_] name)
+       clojure.lang.IHashEq
+       (equals [_# ~'other]
+         (and (instance? ~name ~'other)
+              ~@(map (fn [n] `(= (. ~'other ~(symbol (str \- n))) ~n))
+                     fields)))
+       (hasheq [_#] (.hasheq (BaseType. ~name ~fields)))
+       (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
+       ~@(let [ex (apply array-map extends)]
+           (apply concat
+                  (if (contains? ex 'Show)
+                    ex
+                    `{Show (show [_] (apply pr-str ~fields))}))))
+
+     (defn ~(predicate-name name) [~'x]
+       (instance? ~name ~'x))
+
+     (defmethod print-method ~name [~'x ~'writer]
+       (.write ~'writer (show ~'x)))))
+
+(defprotocol ToSpec (to-spec [_]))
+
+(basetype Unit []
+  Show
+  (show [_] "()"))
+
+(basetype TType []
+  Show
+  (show [_] "type?")
+  ToSpec
+  (to-spec [_]
+    `(s/or :fn (s/spec fn? :gen #(s/gen #{int?}))
+           :spec (s/spec s/spec? :gen #(s/gen #{(s/spec int?)})))))
+
+(basetype Value [value]
+  ToSpec
+  (to-spec [_] value))
+
+(basetype Var [var]
+  ToSpec
+  (to-spec [_] (list 'quote var)))
+
+(basetype Predicate [pred]
+  ToSpec
+  (to-spec [_] pred))
+
+(basetype Record [kvs]
+  Show
+  (show [_] (pr-str (apply array-map kvs))))
+
+(basetype Pair [a b]
+  ToSpec
+  (to-spec [_] `(s/tuple ~(to-spec a) ~(to-spec b)))
+  Show
+  (show [_] (format "(%s * %s)" (pr-str a) (pr-str b))))
+
+(basetype Tuple [fields]
+  Show
+  (show [_] (format "(%s)" (string/join " * " (map pr-str fields))))
+  ToSpec
+  (to-spec [_]
+    `(s/tuple  ~@(map to-spec fields))))
+
+(basetype List [a]
+  Show
+  (show [_] (format "(%s)" a))
+  ToSpec
+  (to-spec [_] `(s/coll-of ~(to-spec a))))
+
+(basetype Vector [a]
+  Show
+  (show [_] (format "[%s]" a))
+  ToSpec
+  (to-spec [_] `(s/coll-of ~(to-spec a) :kind vector?)))
+
+(basetype Set [a]
+  Show
+  (show [_] (format "#{%s}" a))
+  ToSpec
+  (to-spec [_] `(s/coll-of ~(to-spec a) :kind set?)))
+
+(basetype Expr [expr])
+
+(basetype Type [type args]
+  Show
+  (show [_]
+    (format "%s %s" (pr-str type) (string/join " " (map pr-str args)))))
+
+(basetype Function [args return]
+  clojure.lang.ISeq
+  (seq [_] (concat args [return]))
+  Show
+  (show [_]
+    (format "(%s -> %s)"
+            (string/join " -> " (map pr-str args))
+            (pr-str return)))
+  ToSpec
+  (to-spec [x]
+    `(s/fspec :args ~(->> args
+                          (map-indexed (fn [i v] [(idx->key i) (to-spec v)]))
+                          (apply concat)
+                          (cons `s/cat))
+              ~@(when-let [f (parse-fn args return)] [:fn f])
+              :ret ~(to-spec return))))
+
+(basetype Spec [op args]
+  Show
+  (show [_]
+    (format "%s %s" op (string/join " " (map pr-str args))))
+  ToSpec
+  (to-spec [_] `(~op ~@(map to-spec args))))
+
+(basetype DSpec [op vars args]
+  clojure.lang.ISeq
+  (seq [_] (apply list op args))
+  Show
+  (show [_]
+    (let [sig (get-in @type-env [`dependent (res op) :sig])
+          dep-type (first (type-seq sig))]
+      (format "(%s: %s ** %s %s)"
+              (string/join ", " (map pr-str vars))
+              (pr-str dep-type)
+              (pr-str op)
+              (string/join " " (map pr-str args)))))
+  ToSpec
+  (to-spec [x] `(~op ~@(map to-spec args))))
 
 (defn not->? [x] (not= x '->))
 
@@ -307,33 +290,6 @@
          :expr ::type-expr
          :spec ::spec))
 
-
-;; [n, int? ** vect? n int?]
-;; [2 [3 4]]
-;; (s/explain ::type (.-v (first (value-seq '(vect? 4 nat-int?)))))
-
-;; data DPair : (a : Type) -> (P : a -> Type) -> Type where
-;;     MkDPair : {P : a -> Type} -> (x : a) -> P x -> DPair a P
-;; (n : Nat ** Vect n Int)
-;; (2, [3 4])
-;; DPair Nat (\n -> Vect n Int)
-;; MkPair 2 [3 4]
-;; (int? -> int?) /= ((int? -> int?))
-;; (int? -> int? -> int?) /= (int? -> (int? -> int?))
-;; int? -> {:x int?}
-
-;;: TODO:
-;;: * Varargs functions
-;;:   (fdef +, int? -> (s/+ int?) -> int?)
-;;: * Each type of type can be represented by deftype
-;;: * Sum type shorthand expands to s/or (with/out destructuring)
-;;;   - But how would that work? We can write s/or in a spec without it
-;;;     being a "type" in the registry
-;;: * What is the difference between a spec and a product?
-;;;   - Is there one? - I don't think there is
-;;;   - So what do we call it?
-;;;   - cplx
-
 (defn dependent? [x]
   (contains? (get @type-env `dependent) (res x)))
 
@@ -367,15 +323,6 @@
     :spec-var  (Var. x)
     :spec-any  (Value. x)))
 
-;; (to-spec (parse-spec (s/conform ::re-type '(vect? (+ n m) int?))))
-
-;; (parse-spec
-;;  '[:tsig
-;;    {:op vect?,
-;;     :args
-;;     [[:expr {:op + :args [[:expr-var n] [:expr-var m]]}]
-;;      [:pred int?]]}])
-
 (defn type-seq [coll]
   (if coll
     (lazy-seq
@@ -394,8 +341,6 @@
 
 (defmacro sdef [f & sig]
   `(s/def ~f ~(to-spec (parse-type-sig sig))))
-
-;; (to-spec (parse-type-sig '(vect? n int? -> vect? n int?)))
 
 (defn check-ns [ns]
   (let [syms (set (filter #(and (symbol? %) (= (name ns) (namespace %)))
