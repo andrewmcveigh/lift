@@ -3,9 +3,10 @@
 (def +description+ "Spec signature shorthand")
 
 (def dependencies
-  '[[org.clojure/clojure "1.9.0-alpha16"]
-    [org.clojure/test.check "0.9.0"]
-    [orchestra "0.3.0"]])
+  '[[lift/f "0.1.0-SNAPSHOT"]
+    [orchestra "0.3.0"]
+    [org.clojure/clojure "1.9.0-alpha16"]
+    [org.clojure/test.check "0.9.0"]])
 
 (set-env! :dependencies   dependencies
           :source-paths   #{"src"})

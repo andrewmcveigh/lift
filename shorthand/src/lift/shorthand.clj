@@ -4,7 +4,10 @@
    [clojure.spec.alpha :as s]
    [clojure.spec.test.alpha :as t]
    [clojure.string :as string]
-   [orchestra.spec.test :as o]))
+   [lift.f.functor :as f]
+   [orchestra.spec.test :as o])
+  (:import
+   [clojure.lang ISeq]))
 
 (alias 'c 'clojure.core)
 
@@ -39,17 +42,18 @@
 (defn idx->key [i]
   (keyword (str (char (+ i 97)))))
 
-(defn type-var [dspec]
+(defn type-var
+  ;; not really correct - this assumes too much:
+  ;; that the type var is in the first position of :vars
+  ;; and that only d-specs have type vars
+  [dspec]
   (when (d-spec-type? dspec)
     (when-let [v (first (.-vars dspec))]
       (when (var-type? v) v))))
 
-(defn op [dspec]
-  (when (d-spec-type? dspec) (.-op dspec)))
-
 (defn pair-ks->-type-vars [args return]
-  (map (fn [k v] [[k (op v)] {(type-var v) [k]}])
-       (conj (map (juxt (constantly :args) idx->key)
+  (map (fn [k v] [{k (:op v)} {(type-var v) [k]}])
+       (conj (map (fn [x] [:args (idx->key x)])
                   (range 0 (count args))) [:ret])
        (conj args return)))
 
@@ -78,10 +82,14 @@
 
 (defprotocol Show (show [_]))
 
-(defn basetype? [x]
-  (instance? Base x))
+(defprotocol ToSpec (to-spec [_]))
+
+(defmulti from-ast first)
+
+(defn basetype? [x] (instance? Base x))
 
 (defrecord BaseType [name fields])
+
 
 (defmacro basetype
   {:style/indent [2 1]}
@@ -91,6 +99,7 @@
      (deftype ~name ~(conj fields)
        Base
        (base [_] name)
+
        clojure.lang.IHashEq
        (equals [_# ~'other]
          (and (instance? ~name ~'other)
@@ -98,6 +107,20 @@
                      fields)))
        (hasheq [_#] (.hasheq (BaseType. ~name ~fields)))
        (hashCode [_#] (.hashCode (BaseType. ~name ~fields)))
+
+       ~@(when (seq fields)
+           `[clojure.lang.ILookup
+             (valAt
+              [_# k#]
+              (case k#
+                ~@(apply concat (map (fn [j] [(keyword j) j]) fields))
+                nil))
+             (valAt
+              [_# k# default#]
+              (case k#
+                ~@(apply concat (map (fn [j] [(keyword j) j]) fields))
+                default#))])
+
        ~@(let [ex (apply array-map extends)]
            (apply concat
                   (if (contains? ex 'Show)
@@ -110,41 +133,56 @@
      (defmethod print-method ~name [~'x ~'writer]
        (.write ~'writer (show ~'x)))))
 
-(defprotocol ToSpec (to-spec [_]))
 
 (basetype Unit []
   Show
   (show [_] "()"))
 
-(basetype TType []
-  Show
-  (show [_] "type?")
-  ToSpec
-  (to-spec [_]
-    `(s/or :fn (s/spec fn? :gen #(s/gen #{int?}))
-           :spec (s/spec s/spec? :gen #(s/gen #{(s/spec int?)})))))
+(defmethod from-ast ::Unit [_] (Unit.))
 
-(basetype Value [value]
-  ToSpec
-  (to-spec [_] value))
+;; (basetype TType []
+;;   Show
+;;   (show [_] "type?")
+;;   ToSpec
+;;   (to-spec [_]
+;;     `(s/or :fn (s/spec fn? :gen #(s/gen #{int?}))
+;;            :spec (s/spec s/spec? :gen #(s/gen #{(s/spec int?)})))))
+
+;; (basetype Value [value]
+;;   ToSpec
+;;   (to-spec [_] value))
 
 (basetype Var [var]
   ToSpec
   (to-spec [_] (list 'quote var)))
 
+(s/def ::Var
+  (s/and simple-symbol? #(re-matches #"^[a-z]+$" (name %))))
+
+(defmethod from-ast ::Var [[_ ast]] ast)
+
+
 (basetype Predicate [pred]
   ToSpec
   (to-spec [_] pred))
 
-(basetype Record [kvs]
-  Show
-  (show [_] (pr-str (apply array-map kvs))))
+(s/def ::Predicate
+  (s/and symbol? #(re-matches #".+\?$" (name %))))
 
-(basetype Pair [a b]
-  ToSpec
-  (to-spec [_] `(s/tuple ~(to-spec a) ~(to-spec b)))
+(defmethod from-ast ::Predicate [[_ ast]] ast)
+
+
+(basetype Type [type args]
   Show
-  (show [_] (format "(%s * %s)" (pr-str a) (pr-str b))))
+  (show [_]
+    (format "%s %s" (pr-str type) (string/join " " (map pr-str args)))))
+
+(s/def ::Type
+  (s/cat :type ::predicate :args (s/+ ::type)))
+
+(defmethod from-ast ::Type [[_ ast]]
+  (Type. (:type ast) (map from-ast (:args ast))))
+
 
 (basetype Tuple [fields]
   Show
@@ -153,39 +191,62 @@
   (to-spec [_]
     `(s/tuple  ~@(map to-spec fields))))
 
+(s/def ::Tuple
+  (s/and seq? (s/cat :a* (s/* (s/cat :a ::type :* #{'*})) :a ::type)))
+
+(defmethod from-ast ::Tuple [[_ ast]]
+  (Tuple. (map from-ast (conj (mapv :a (:a* ast)) (:a ast)))))
+
+
 (basetype List [a]
   Show
   (show [_] (format "(%s)" a))
   ToSpec
   (to-spec [_] `(s/coll-of ~(to-spec a))))
 
+(s/def ::List
+  (s/and seq? (s/cat :a ::type)))
+
+(defmethod from-ast ::List [[_ ast]]
+  (List. (from-ast (:a ast))))
+
+
 (basetype Vector [a]
+  FromAst
+  (from-ast [ast]
+    (Vector. (from-ast (:a ast))))
   Show
   (show [_] (format "[%s]" a))
   ToSpec
   (to-spec [_] `(s/coll-of ~(to-spec a) :kind vector?)))
 
-(basetype Set [a]
-  Show
-  (show [_] (format "#{%s}" a))
-  ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a) :kind set?)))
+(s/def ::Vector
+  (s/and vector? (s/cat :a ::type)))
 
-(basetype Expr [expr])
+(defmethod from-ast ::Vector [[_ ast]]
+  (Vector. (from-ast (:a ast))))
 
-(basetype Type [type args]
-  Show
-  (show [_]
-    (format "%s %s" (pr-str type) (string/join " " (map pr-str args)))))
+
+(basetype Expr [op args])
+
+(s/def ::Expr
+  (s/and seq?
+         (s/cat :op symbol? :args (s/+ (s/or ::Var ::Var ::Value ::Value)))))
+
+(defmethod from-ast ::Expr [[_ ast]]
+  (Expr. (:op ast) (map from-ast (:args ast))))
+
 
 (basetype Function [args return]
-  clojure.lang.ISeq
+  ISeq
   (seq [_] (concat args [return]))
+
   Show
   (show [_]
     (format "(%s -> %s)"
             (string/join " -> " (map pr-str args))
             (pr-str return)))
+
   ToSpec
   (to-spec [x]
     `(s/fspec :args ~(->> args
@@ -203,7 +264,7 @@
   (to-spec [_] `(~op ~@(map to-spec args))))
 
 (basetype DSpec [op vars args]
-  clojure.lang.ISeq
+  ISeq
   (seq [_] (apply list op args))
   Show
   (show [_]
@@ -222,47 +283,10 @@
 (defn ->? [decl]
   (some (partial = '->) decl))
 
-(s/def ::type-var
-  (s/and simple-symbol? #(re-matches #"^[a-z]+$" (name %))))
-
-(s/def ::predicate
-  (s/and symbol? #(re-matches #".+\?$" (name %))))
-
 (s/def ::-> (partial = '->))
-
-(s/def ::list-a
-  (s/and seq? (s/cat :a ::type)))
-
-(s/def ::vector-a
-  (s/and vector? (s/cat :a ::type)))
-
-(s/def ::set-a
-  (s/and set? (s/cat :a ::type)))
-
-(s/def ::pair-a
-  (s/and vector? (s/cat :a ::type :b ::type)))
-
-(s/def ::n-tuple-a
-  (s/and vector? (s/cat :a ::type :b ::type :cs (s/+ ::type))))
-
-(s/def ::coll
-  (s/or :list ::list-a
-        :vect ::vector-a
-        :set  ::set-a
-        :pair ::pair-a
-        :tupl ::n-tuple-a))
 
 (s/def ::func-sig
   (s/and seq? #(some #{'->} %)))
-
-(s/def ::type-sig
-  (s/cat :op ::predicate :args (s/+ ::type)))
-
-(s/def ::type-expr
-  (s/and seq?
-         (s/cat :op symbol?
-                :args (s/+ (s/or :expr-var ::type-var
-                                 :expr-val any?)))))
 
 (s/def ::spec
   (s/cat :op symbol?
@@ -275,7 +299,9 @@
         :pred ::predicate
         :tvar ::type-var
         :bfun ::func-sig
-        :coll ::coll
+        :list ::list-a
+        :vect ::vector-a
+        :tupl ::tuple-a
         :tsig ::type-sig
         :expr ::type-expr
         :spec ::spec))
@@ -285,7 +311,9 @@
          :pred ::predicate
          :tvar ::type-var
          :bfun ::func-sig
-         :coll ::coll
+         :list ::list-a
+         :vect ::vector-a
+         :tupl ::tuple-a
          :tsig ::type-sig
          :expr ::type-expr
          :spec ::spec))
@@ -301,9 +329,6 @@
     :coll (parse-spec x)
     :list (List. (parse-spec (:a x)))
     :vect (Vector. (parse-spec (:a x)))
-    :set  (Set. (parse-spec (:a x)))
-    :pair (Pair. (parse-spec (:a x))
-                 (parse-spec (:b x)))
     :tupl (Tuple. (concat [(parse-spec (:a x))
                            (parse-spec (:b x))]
                           (map parse-spec (:cs x))))
@@ -381,6 +406,12 @@
 ;; (dependent vect? (nat-int? -> type? -> type?) [n t] count
 ;;   (s/coll-of t :into [] :kind vector?))
 
+;; if there's a spec in the registry by the name
+;; pull the type sig:
+;; a. does it return a type?
+;; b. does it have a non-type? argument
+;; => then it's a dependent type, right?
+;; c. now, where does the dependent-fn go?
 ;; (defmacro defn
 ;;   {:style/indent 2}
 ;;   [name & args]
@@ -398,28 +429,21 @@
 ;; (defn length [n]
 ;;   (fn [xs] (= (count xs) n)))
 
-;; (s/conform :clojure.core.specs.alpha/defn-args
-;;            '(vect? [{n count} t] (nil)))
-;; (s/conform :clojure.core.specs.alpha/defn-args
-;;            '(vect? [{:keys [thing]} t] (nil)))
+;; If a type is dependent on a value, the value is part of the type.
+;; if we need a function/spec to check on a type, we need the function
+;; to check the value.
 
-;; (s/conform )
-;; {:name vect?,
-;;  :bs
-;;  [:arity-1
-;;   {:args {:args [[:map {n count}] [:sym t]]}, :body [:body [(nil)]]}]}
-
-;; (c/defn vvv [{n count}]
-;;   n
-;;   )
-
-;; (vvv 1)
+;; or there's a better way to check vect of length n
+;; type-predicate?
+;; value-predicate?
 
 ;; (sdef vect?, nat-int? -> type? -> type?)
-;; (defn vect? [n t]
-;;   (s/and (s/coll-of t :into [] :kind vector?)
-;;          (length n)))
+(defn vect? [n]
+  (fn [t]
+    (s/and (s/coll-of t :into [] :kind vector?)
+           (length n))))
 
+'count -> n
 
 ;; '(data Vect (len :- Nat -> elem :- Type -> Type)
 ;;    (Nil  (Vect Z elem))
