@@ -1,5 +1,7 @@
 (ns lift.shorthand.impl
+  (:refer-clojure :exclude [read])
   (:require
+   [clojure.pprint :as pp]
    [clojure.spec.alpha :as s]
    [clojure.string :as string]
    [lift.shorthand.util :refer :all]))
@@ -77,7 +79,7 @@
 
          ~@(vals (dissoc ex 'Show)))
 
-       (defn ~tagname ~fields (new ~classname 0 0 ~@fields))
+       (defn ~tagname ~fields (new ~classname ~@fields 0 0))
        (defn ~(predicate-name tagname) [~'x]
          (instance? ~classname ~'x))
 
@@ -95,6 +97,8 @@
 (basetype Var [var]
   ToSpec
   (to-spec [_] (list 'quote var)))
+
+(basetype Value [value])
 
 (basetype Predicate [pred]
   ToSpec
@@ -114,17 +118,21 @@
 
 (basetype List [a]
   Show
-  (show [_] (format "(%s)" a))
+  (show [_] (format "(%s)" (pr-str a)))
   ToSpec
   (to-spec [_] `(s/coll-of ~(to-spec a))))
 
 (basetype Vector [a]
   Show
-  (show [_] (format "[%s]" a))
+  (show [_] (format "[%s]" (pr-str a)))
   ToSpec
   (to-spec [_] `(s/coll-of ~(to-spec a) :kind vector?)))
 
-(basetype Expr [op args])
+(basetype Expr [op args]
+  Show
+  (show [_] (format "(%s %s)"
+                    (name op)
+                    (string/join " " (map pr-str args)))))
 
 (basetype Function [args return]
   clojure.lang.ISeq
@@ -135,7 +143,7 @@
             (string/join " -> " (map pr-str args))
             (pr-str return))))
 
-(def parsers (atom {}))
+(def parsers (atom []))
 
 (defmulti construct first)
 
@@ -143,11 +151,24 @@
   (if-let [sym (res t)]
     (let [key (keyword (namespace sym) (name sym))]
       `(do
-         (swap! parsers assoc ~key '~sym)
+         (swap! parsers conj [~key '~sym])
          (s/def ~sym ~spec)
          (defmethod construct ~key ~'[[_ ast]] (~ctor ~'ast))
          '~sym))
     (throw (Exception. (str "Could not resolve `t`: " (pr-str t))))))
+
+(defparser Function
+  (s/and seq?
+         (s/cat ::type ::retype :more (s/+ (s/cat :_ #{'->} ::type ::type))))
+  (fn [x]
+    (let [types (->> (map ::type (:more x))
+                     (cons (::type x))
+                     (map construct))]
+     (Function (butlast types) (last types)))))
+
+(defparser Type
+  (s/cat ::Predicate `Predicate :args (s/+ ::type))
+  (fn [x] (Type (::Predicate x) (map construct (:args x)))))
 
 (defparser Var
   (s/and simple-symbol? #(re-matches #"^[a-z]+$" (name %)))
@@ -157,12 +178,8 @@
   (s/and symbol? #(re-matches #".+\?$" (name %)))
   (fn [x] (Predicate x)))
 
-(defparser Type
-  (s/cat :type ::predicate :args (s/+ ::type))
-  (fn [x] (Type (:type x) (map construct (:args x)))))
-
 (defparser Tuple
-  (s/and seq? (s/cat :a* (s/* (s/cat :a ::type :* #{'*})) :a ::type))
+  (s/and seq? (s/cat :a* (s/+ (s/cat :a ::type :* #{'*})) :a ::type))
   (fn [x] (Tuple (map construct (conj (mapv :a (:a* x)) (:a x))))))
 
 (defparser List
@@ -173,8 +190,13 @@
   (s/and vector? (s/cat :a ::type))
   (fn [x] (Vector (construct (:a x)))))
 
-;; (defparser Expr
-;;   (s/and seq? (s/cat :op symbol? :args (s/+ (s/or ::Var `Var ::Value `Value)))))
+(defparser Expr
+  (s/and seq? (s/cat :op symbol? :args (s/+ (s/or ::Var `Var ::Value `Value))))
+  (fn [x] (Expr (:op x) (map construct (:args x)))))
+
+(defparser Value
+  (complement symbol? #_(partial s/valid? ::type))
+  (fn [x] (Value x)))
 
 ;; (defparser Spec
 ;;   (s/cat :op symbol?
@@ -182,18 +204,30 @@
 ;;                           :spec-var  ::type-var
 ;;                           :spec-any  any?))))
 
-(defparser Function
-  (s/and seq?
-         #(some #{'->} %)
-         (s/coll-of (s/or ::type ::type :_ #{'->})))
-  (fn [x] (Function (map construct (butlast x)) (construct (last x)))))
+(defmacro build-type-parsers []
+  (let [parsers' (->> @parsers
+                      (map (fn [[k v]] [k (list 'quote v)]))
+                      (apply concat))]
+    `(do
+       (s/def ::type ~(cons 's/or parsers'))
+       (s/def ::retype ~(cons 's/alt parsers')))))
 
 (defmacro conform [x]
   `(do
-     (s/def ::type ~(->> (sort @parsers)
-                         (map (fn [[k v]] [k (list 'quote v)]))
-                         (apply concat)
-                         (cons 's/or)))
+     (build-type-parsers)
      (s/conform ::type ~x)))
 
-(construct (conform '(a -> (b * c))))
+(defmacro explain [x]
+  `(do
+     (build-type-parsers)
+     (s/explain ::type ~x)))
+
+(defmacro pprint [x]
+  `(do
+     (build-type-parsers)
+     (pp/pprint (s/conform ::type ~x))))
+
+(defn parse [x]
+  (construct (conform x)))
+
+(parse '(prod? (+ x 1) (a * b) -> (a * b) -> b))
