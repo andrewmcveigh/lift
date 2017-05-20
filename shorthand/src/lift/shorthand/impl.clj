@@ -90,6 +90,10 @@
 
 (defn basetype? [x] (instance? Base x))
 
+(basetype Type []
+  Show
+  (show [_] "type?"))
+
 (basetype Unit []
   Show
   (show [_] "()"))
@@ -104,7 +108,7 @@
   ToSpec
   (to-spec [_] pred))
 
-(basetype Type [type args]
+(basetype Param [type args]
   Show
   (show [_]
     (format "%s %s" (pr-str type) (string/join " " (map pr-str args)))))
@@ -118,15 +122,9 @@
 
 (basetype List [a]
   Show
-  (show [_] (format "(%s)" (pr-str a)))
-  ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a))))
-
-(basetype Vector [a]
-  Show
   (show [_] (format "[%s]" (pr-str a)))
   ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a) :kind vector?)))
+  (to-spec [_] `(s/coll-of ~(to-spec a))))
 
 (basetype Expr [op args]
   Show
@@ -157,18 +155,22 @@
          '~sym))
     (throw (Exception. (str "Could not resolve `t`: " (pr-str t))))))
 
+(defparser Type #{'type?} (constantly (Type)))
+
+(defparser Unit #{()} (constantly (Unit)))
+
 (defparser Function
   (s/and seq?
-         (s/cat ::type ::retype :more (s/+ (s/cat :_ #{'->} ::type ::type))))
+         (s/cat ::type ::retype :more (s/+ (s/cat :_ #{'->} ::type ::retype))))
   (fn [x]
     (let [types (->> (map ::type (:more x))
                      (cons (::type x))
                      (map construct))]
      (Function (butlast types) (last types)))))
 
-(defparser Type
+(defparser Param
   (s/cat ::Predicate `Predicate :args (s/+ ::type))
-  (fn [x] (Type (::Predicate x) (map construct (:args x)))))
+  (fn [x] (Param (Predicate (::Predicate x)) (map construct (:args x)))))
 
 (defparser Var
   (s/and simple-symbol? #(re-matches #"^[a-z]+$" (name %)))
@@ -183,12 +185,8 @@
   (fn [x] (Tuple (map construct (conj (mapv :a (:a* x)) (:a x))))))
 
 (defparser List
-  (s/and seq? (s/cat :a ::type))
-  (fn [x] (List (construct (:a x)))))
-
-(defparser Vector
   (s/and vector? (s/cat :a ::type))
-  (fn [x] (Vector (construct (:a x)))))
+  (fn [x] (List (construct (:a x)))))
 
 (defparser Expr
   (s/and seq? (s/cat :op symbol? :args (s/+ (s/or ::Var `Var ::Value `Value))))
@@ -212,22 +210,20 @@
        (s/def ::type ~(cons 's/or parsers'))
        (s/def ::retype ~(cons 's/alt parsers')))))
 
-(defmacro conform [x]
-  `(do
-     (build-type-parsers)
-     (s/conform ::type ~x)))
+(defn conform [x]
+  (do
+    (build-type-parsers)
+    (s/conform ::type x)))
 
-(defmacro explain [x]
-  `(do
-     (build-type-parsers)
-     (s/explain ::type ~x)))
+(defn explain [x]
+  (do
+    (build-type-parsers)
+    (s/explain ::type x)))
 
-(defmacro pprint [x]
-  `(do
-     (build-type-parsers)
-     (pp/pprint (s/conform ::type ~x))))
+(defn pprint [x]
+  (do
+    (build-type-parsers)
+    (pp/pprint (s/conform ::type x))))
 
 (defn parse [x]
   (construct (conform x)))
-
-(parse '(prod? (+ x 1) (a * b) -> (a * b) -> b))

@@ -12,142 +12,10 @@
 
 (alias 'c 'clojure.core)
 
-(declare type-seq parse-type-sig)
-
 (def type-env (atom {}))
 
-(basetype Unit []
-  Show
-  (show [_] "()"))
-
-(basetype Var [var]
-  ToSpec
-  (to-spec [_] (list 'quote var)))
-
-(basetype Predicate [pred]
-  ToSpec
-  (to-spec [_] pred))
-
-(basetype Type [type args]
-  Show
-  (show [_]
-    (format "%s %s" (pr-str type) (string/join " " (map pr-str args)))))
-
-(basetype Tuple [fields]
-  Show
-  (show [_] (format "(%s)" (string/join " * " (map pr-str fields))))
-  ToSpec
-  (to-spec [_]
-    `(s/tuple  ~@(map to-spec fields))))
-
-(basetype List [a]
-  Show
-  (show [_] (format "(%s)" a))
-  ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a))))
-
-(basetype Vector [a]
-  Show
-  (show [_] (format "[%s]" a))
-  ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a) :kind vector?)))
-
-(basetype Expr [op args])
-
-(basetype Function [args return]
-  ISeq
-  (seq [_] (concat args [return]))
-
-  Show
-  (show [_]
-    (format "(%s -> %s)"
-            (string/join " -> " (map pr-str args))
-            (pr-str return)))
-
-  ;; ToSpec
-  #_(to-spec [x]
-    `(s/fspec :args ~(->> args
-                          (map-indexed (fn [i v] [(idx->key i) (to-spec v)]))
-                          (apply concat)
-                          (cons `s/cat))
-              ~@(when-let [f (parse-fn args return)] [:fn f])
-              :ret ~(to-spec return))))
-
-(basetype Spec [op args]
-  Show
-  (show [_]
-    (format "%s %s" op (string/join " " (map pr-str args))))
-  ToSpec
-  (to-spec [_] `(~op ~@(map to-spec args))))
-
-(basetype DSpec [op vars args]
-  ISeq
-  (seq [_] (apply list op args))
-  Show
-  (show [_]
-    (let [sig (get-in @type-env [`dependent (res op) :sig])
-          dep-type (first (type-seq sig))]
-      (format "(%s: %s ** %s %s)"
-              (string/join ", " (map pr-str vars))
-              (pr-str dep-type)
-              (pr-str op)
-              (string/join " " (map pr-str args)))))
-  ToSpec
-  (to-spec [x] `(~op ~@(map to-spec args))))
-
-(defn not->? [x] (not= x '->))
-
-(defn ->? [decl]
-  (some (partial = '->) decl))
-
-(defn dependent? [x]
-  (contains? (get @type-env `dependent) (res x)))
-
-(defn parse-spec [[t x]]
-  (case t
-    :type (TType.)
-    :pred (Predicate. x)
-    :bfun (parse-type-sig x)
-    :coll (parse-spec x)
-    :list (List. (parse-spec (:a x)))
-    :vect (Vector. (parse-spec (:a x)))
-    :tupl (Tuple. (concat [(parse-spec (:a x))
-                           (parse-spec (:b x))]
-                          (map parse-spec (:cs x))))
-    :tsig (Type. (:op x) (map parse-spec (:args x)))
-    ;; is a typesig, not a spec
-    ;; but what is it?
-    ;; do I know yet? it's a function that returns a type?
-    :expr (Expr. (apply list (:op x) (map parse-spec (:args x))))
-    :expr-var (Var. x)
-    :expr-val (Value. x)
-    :spec (let [{:keys [op args]} x]
-            (if (dependent? op)
-              (let [args (map parse-spec args)]
-                (DSpec. op (filter var-type? args) args))
-              (Spec.  op (map parse-spec args))))
-    :spec-type (parse-spec x)
-    :spec-var  (Var. x)
-    :spec-any  (Value. x)))
-
-(defn type-seq [coll]
-  (if coll
-    (lazy-seq
-     (cons (let [a (take-while not->? coll)]
-             (if (contains? (set a) '->)
-               (type-seq a)
-               (parse-spec (s/conform ::type a))))
-           (type-seq (next (drop-while not->? coll)))))
-    ()))
-
-(defn parse-type-sig [sig]
-  (let [tseq (type-seq sig)]
-    (if (> (count tseq) 1)
-      (Function. (butlast tseq) (last tseq))
-      (first tseq))))
-
 (defmacro sdef [f & sig]
-  `(s/def ~f ~(to-spec (parse-type-sig sig))))
+  `(s/def ~f ~(to-spec (parse sig))))
 
 (defn check-ns [ns]
   (let [syms (set (filter #(and (symbol? %) (= (name ns) (namespace %)))
@@ -170,23 +38,13 @@
            (prn res#)
            (:clojure.spec.alpha/problems (ex-data res#))))))
 
-;; (defmacro dependent
-;;   {:style/indent :defn}
-;;   [t sig args f expr]
-;;   (let [sig sig]
-;;     (swap! type-env
-;;            assoc-in
-;;            [`dependent (res t)] {:sig sig :args args :f f}))
-;;   `(defn ~t ~args ~expr))
+(sdef vect?, nat-int? -> type? -> type?)
 
 ;;; We need a spec
 ;;; That also returns a value to the env when called with a value
 
 ;;; Something that is, a) dependent, and b) -> type? is a spec/type
 ;;; This must put some information into the type environment
-
-;; (dependent vect? (nat-int? -> type? -> type?) [n t] count
-;;   (s/coll-of t :into [] :kind vector?))
 
 ;; if there's a spec in the registry by the name
 ;; pull the type sig:

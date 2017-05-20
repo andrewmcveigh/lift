@@ -70,3 +70,26 @@
 ;;                                           (list `get-in 'x %))
 ;;                                    v))))
 ;;                  (cons 'and)))))))
+  ;; ToSpec
+  #_(to-spec [x]
+    `(s/fspec :args ~(->> args
+                          (map-indexed (fn [i v] [(idx->key i) (to-spec v)]))
+                          (apply concat)
+                          (cons `s/cat))
+              ~@(when-let [f (parse-fn args return)] [:fn f])
+              :ret ~(to-spec return)))
+
+;; (basetype DSpec [op vars args]
+;;   ISeq
+;;   (seq [_] (apply list op args))
+;;   Show
+;;   (show [_]
+;;     (let [sig (get-in @type-env [`dependent (res op) :sig])
+;;           dep-type (first (type-seq sig))]
+;;       (format "(%s: %s ** %s %s)"
+;;               (string/join ", " (map pr-str vars))
+;;               (pr-str dep-type)
+;;               (pr-str op)
+;;               (string/join " " (map pr-str args)))))
+;;   ToSpec
+;;   (to-spec [x] `(~op ~@(map to-spec args))))
