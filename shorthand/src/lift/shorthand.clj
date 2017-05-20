@@ -46,20 +46,56 @@
 (sdef env?, type?)
 (vdef env? (int? * int?))
 
-(defmacro spec
-  {:style/indent :defn}
-  [sym args expr]
-  `(defn ~sym ~args ~expr))
+(s/def ::bindings
+  (s/and vector? (s/+ (s/cat :sym simple-symbol? :form any?))))
+
+(s/def ::data
+  (s/cat :where    #{'where}
+         :bindings ::bindings
+         :expr     (s/or :spec seq? :pred `Predicate)))
+
+{:where where,
+ :bindings [{:sym n, :form count}
+            {:sym t, :form (comp (partial reduce unify t) (partial map type))}],
+ :expr [:spec (s/coll-of t :into [] :kind vector? :min-count n :max-count n)]}
 
 (defmacro where
   {:style/indent :defn}
-  [bindings spec])
+  [bindings spec]
+  (assert nil "`where` not used inside `data`"))
+
+(defmacro data
+  {:style/indent :defn}
+  [sym args expr]
+  (let [ns-sym (ns-qualify sym)
+        conformed (s/conform ::data expr)]
+    (if (= ::s/invalid conformed)
+      (throw
+       (ex-info "`expr` did not conform to spec"
+                {:type ::s/invalid :explain-data (s/explain-data ::data expr)}))
+      (let [{:keys [bindings expr]} conformed
+            bound-syms (mapv :sym bindings)
+            bindings (->> bindings
+                          (map (fn [{:keys [sym form]}]
+                                 [(list 'quote sym) form]))
+                          (into (array-map)))]
+        `(defn ~sym ~args
+           (Dependent
+            '~sym
+            ~args
+            ~bindings
+            (get @type-env '~ns-sym)
+            (fn ~args ~(second expr))))))))
 
 (sdef vect?, nat-int? -> type? -> type?)
-(spec vect? [n t]
+(data vect? [n t]
   (where [n count
-          t (comp (partial reduce unify t) (partial map type))]
+          t (comp (partial reduce 'unify t) (partial map type))]
     (s/coll-of t :into [] :kind vector? :min-count n :max-count n)))
+
+(vect? '1 'int?)
+
+;;
 
 ;;; We need a spec
 ;;; That also returns a value to the env when called with a value

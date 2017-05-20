@@ -150,19 +150,21 @@
                           (cons `s/cat))
               :ret ~(to-spec return))))
 
-(basetype Dependent [op args bindings sig]
+(basetype Dependent [op args bindings sig spec]
   Show
   (show [_]
     (let [val-types (keep (fn [[v t]]
                             (when-not (type-type? t)
                               (str (pr-str v) ": " (pr-str t))))
-                          (map vector args (:args sig)))]
+                          (map vector (keys bindings) (:args sig)))]
       (format "(%s ** %s %s)"
               (string/join ", " val-types)
               (pr-str op)
-              (string/join " " (map pr-str args))))))
+              (string/join " " (map pr-str args)))))
+  ToSpec
+  (to-spec [_] spec))
 
-(Dependent 'vect? '[n t] [] (parse ::type '(nat-int? -> type? -> type?)))
+;; (Dependent 'vect? '[n t] [] (parse ::type '(nat-int? -> type? -> type?)))
 
 (def parsers (atom []))
 
