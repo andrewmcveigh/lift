@@ -34,6 +34,13 @@
           (class? v) (symbol (.getName v))
           :else      x)))
 
+(defn ns-qualify
+  "Qualify symbol s by resolving it or using the current *ns*."
+  [s]
+  (if-let [ns-sym (some-> s namespace symbol)]
+    (or (some-> (get (ns-aliases *ns*) ns-sym) str (symbol (name s))) s)
+    (symbol (str (.name *ns*)) (str s))))
+
 
 ;; (defn type-var
 ;;   ;; not really correct - this assumes too much:

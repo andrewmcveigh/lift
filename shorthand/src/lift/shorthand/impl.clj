@@ -18,8 +18,10 @@
   {:style/indent [2 1]}
   [tagname fields & extends]
   (let [classname (symbol (str (namespace-munge *ns*) ".types." tagname))
-        ex        (apply array-map extends)]
+        ex        (apply array-map extends)
+        pred      (predicate-name tagname)]
     `(do
+       (declare ~pred)
        (deftype* ~(symbol (name (ns-name *ns*)) (name tagname))
          ~classname
          ~(conj fields
@@ -80,7 +82,7 @@
          ~@(vals (dissoc ex 'Show)))
 
        (defn ~tagname ~fields (new ~classname ~@fields 0 0))
-       (defn ~(predicate-name tagname) [~'x]
+       (defn ~pred [~'x]
          (instance? ~classname ~'x))
 
        (defmethod print-method ~classname [~'x ~'writer]
@@ -92,7 +94,9 @@
 
 (basetype Type []
   Show
-  (show [_] "type?"))
+  (show [_] "type?")
+  ToSpec
+  (to-spec [_] 'type-type?))
 
 (basetype Unit []
   Show
@@ -137,7 +141,28 @@
   (show [_]
     (format "(%s -> %s)"
             (string/join " -> " (map pr-str args))
-            (pr-str return))))
+            (pr-str return)))
+  ToSpec
+  (to-spec [x]
+    `(s/fspec :args ~(->> args
+                          (map-indexed (fn [i v] [(idx->key i) (to-spec v)]))
+                          (apply concat)
+                          (cons `s/cat))
+              :ret ~(to-spec return))))
+
+(basetype Dependent [op args bindings sig]
+  Show
+  (show [_]
+    (let [val-types (keep (fn [[v t]]
+                            (when-not (type-type? t)
+                              (str (pr-str v) ": " (pr-str t))))
+                          (map vector args (:args sig)))]
+      (format "(%s ** %s %s)"
+              (string/join ", " val-types)
+              (pr-str op)
+              (string/join " " (map pr-str args))))))
+
+(Dependent 'vect? '[n t] [] (parse ::type '(nat-int? -> type? -> type?)))
 
 (def parsers (atom []))
 
@@ -211,20 +236,24 @@
        (s/def ::type ~(cons 's/or parsers'))
        (s/def ::retype ~(cons 's/alt parsers')))))
 
-(defn conform [x]
+(defn conform [spec x]
   (do
     (build-type-parsers)
-    (s/conform ::type x)))
+    (s/conform spec x)))
 
-(defn explain [x]
+(defn explain [spec x]
   (do
     (build-type-parsers)
-    (s/explain ::type x)))
+    (s/explain spec x)))
 
-(defn pprint [x]
-  (do
-    (build-type-parsers)
-    (pp/pprint (s/conform ::type x))))
+(defn pprint [spec x]
+  (pp/pprint (conform spec x)))
 
-(defn parse [x]
-  (construct (conform x)))
+(defn parse [spec x]
+  (construct (conform spec x)))
+
+(defn parse-type-signature [sig]
+  (if (= (count sig) 1)
+    (parse ::retype sig)
+    (parse ::type sig))
+  )

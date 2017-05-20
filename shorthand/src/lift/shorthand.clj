@@ -4,7 +4,7 @@
    [clojure.spec.alpha :as s]
    [clojure.spec.test.alpha :as t]
    [clojure.string :as string]
-   [lift.shorthand.impl :refer :all]
+   [lift.shorthand.impl :as impl :refer :all]
    [lift.shorthand.util :refer :all]
    [orchestra.spec.test :as o])
   (:import
@@ -14,8 +14,13 @@
 
 (def type-env (atom {}))
 
-(defmacro sdef [f & sig]
-  `(s/def ~f ~(to-spec (parse sig))))
+(defmacro sdef [sym & sig]
+  `(do
+     (swap! type-env assoc '~(ns-qualify sym) (parse-type-signature '~sig))
+     (s/def ~sym ~(to-spec (parse-type-signature sig)))))
+
+(defmacro vdef [sym sig]
+  `(def ~sym (parse ::impl/type '~sig)))
 
 (defn check-ns [ns]
   (let [syms (set (filter #(and (symbol? %) (= (name ns) (namespace %)))
@@ -38,7 +43,23 @@
            (prn res#)
            (:clojure.spec.alpha/problems (ex-data res#))))))
 
+(sdef env?, type?)
+(vdef env? (int? * int?))
+
+(defmacro spec
+  {:style/indent :defn}
+  [sym args expr]
+  `(defn ~sym ~args ~expr))
+
+(defmacro where
+  {:style/indent :defn}
+  [bindings spec])
+
 (sdef vect?, nat-int? -> type? -> type?)
+(spec vect? [n t]
+  (where [n count
+          t (comp (partial reduce unify t) (partial map type))]
+    (s/coll-of t :into [] :kind vector? :min-count n :max-count n)))
 
 ;;; We need a spec
 ;;; That also returns a value to the env when called with a value
@@ -78,12 +99,12 @@
 ;; value-predicate?
 
 ;; (sdef vect?, nat-int? -> type? -> type?)
-(defn vect? [n]
-  (fn [t]
-    (s/and (s/coll-of t :into [] :kind vector?)
-           (length n))))
+;; (defn vect? [n]
+;;   (fn [t]
+;;     (s/and (s/coll-of t :into [] :kind vector?)
+;;            (length n))))
 
-'count -> n
+;; 'count -> n
 
 ;; '(data Vect (len :- Nat -> elem :- Type -> Type)
 ;;    (Nil  (Vect Z elem))

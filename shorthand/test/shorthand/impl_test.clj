@@ -4,6 +4,7 @@
    [clojure.test :refer [deftest is testing]]
    [lift.shorthand.impl :refer :all]))
 
+
 (deftest simple-parse-test
 
   (is (= (Type) (parse 'type?)))
@@ -111,7 +112,8 @@
   (is (= (Function [(Param (Predicate 'list?) [(Var 'a)])
                     (Param (Predicate 'list?) [(Var 'b)])
                     (Function [(Var 'a) (Var 'b)] (Var 'c))]
-                   (Param (Predicate 'list?) [(Var 'c)])))))
+                   (Param (Predicate 'list?) [(Var 'c)]))
+         (parse '(list? a -> list? b -> (a -> b -> c) -> list? c)))))
 
 
 ;; (clojure.test/run-tests)
