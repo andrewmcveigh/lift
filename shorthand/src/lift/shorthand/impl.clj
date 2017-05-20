@@ -133,8 +133,6 @@
                     (string/join " " (map pr-str args)))))
 
 (basetype Function [args return]
-  clojure.lang.ISeq
-  (seq [_] (concat args [return]))
   Show
   (show [_]
     (format "(%s -> %s)"
@@ -169,8 +167,10 @@
      (Function (butlast types) (last types)))))
 
 (defparser Param
-  (s/cat ::Predicate `Predicate :args (s/+ ::type))
-  (fn [x] (Param (Predicate (::Predicate x)) (map construct (:args x)))))
+  (s/alt :parens (s/and seq? (s/cat ::Predicate `Predicate :args (s/+ ::type)))
+         :noparens (s/cat ::Predicate `Predicate :args (s/+ ::type)))
+  (fn [[_ x]]
+    (Param (Predicate (::Predicate x)) (map construct (:args x)))))
 
 (defparser Var
   (s/and simple-symbol? #(re-matches #"^[a-z]+$" (name %)))
@@ -181,7 +181,7 @@
   (fn [x] (Predicate x)))
 
 (defparser Tuple
-  (s/and seq? (s/cat :a* (s/+ (s/cat :a ::type :* #{'*})) :a ::type))
+  (s/and seq? (s/cat :a* (s/+ (s/cat :a ::retype :* #{'*})) :a ::retype))
   (fn [x] (Tuple (map construct (conj (mapv :a (:a* x)) (:a x))))))
 
 (defparser List
@@ -189,7 +189,8 @@
   (fn [x] (List (construct (:a x)))))
 
 (defparser Expr
-  (s/and seq? (s/cat :op symbol? :args (s/+ (s/or ::Var `Var ::Value `Value))))
+  (s/and seq? (s/cat :op (s/and symbol? #(not (s/valid? `Predicate %)))
+                     :args (s/+ (s/or ::Var `Var ::Value `Value))))
   (fn [x] (Expr (:op x) (map construct (:args x)))))
 
 (defparser Value

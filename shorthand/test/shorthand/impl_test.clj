@@ -1,74 +1,117 @@
 (ns lift.shorthand.impl-test
+  (:refer-clojure :exclude [read])
   (:require
    [clojure.test :refer [deftest is testing]]
    [lift.shorthand.impl :refer :all]))
 
 (deftest simple-parse-test
 
-  (testing "Can parse `type?`"
-    (let [sig (parse 'type?)]
-      (is (= (Type) sig))))
+  (is (= (Type) (parse 'type?)))
 
-  (testing "Can parse `()`"
-    (let [sig (parse ())]
-      (is (= (Unit) sig))))
+  (is (= (Unit) (parse ())))
 
-  (testing "Can parse `a`"
-    (let [sig (parse 'a)]
-      (is (= (Var 'a) sig))))
+  (is (= (Var 'a) (parse 'a)))
 
-  (testing "Can parse `int?`"
-    (let [sig (parse 'int?)]
-      (is (= (Predicate 'int?) sig))))
+  (is (= (Predicate 'int?)
+         (parse 'int?)))
 
-  (testing "Can parse `(int? * int?)`"
-    (let [sig (parse '(int? * int?))]
-      (is (= (Tuple [(Predicate 'int?) (Predicate 'int?)]) sig))))
+  (is (= (Tuple [(Predicate 'int?) (Predicate 'int?)])
+         (parse '(int? * int?))))
 
-  (testing "Can parse `(int? * a)`"
-    (let [sig (parse '(int? * a))]
-      (is (= (Tuple [(Predicate 'int?) (Var 'a)]) sig))))
+  (is (= (Tuple [(Predicate 'int?) (Var 'a)])
+         (parse '(int? * a))))
 
-  (testing "Can parse `(a * b)`"
-    (let [sig (parse '(a * b))]
-      (is (= (Tuple [(Var 'a) (Var 'b)]) sig))))
+  (is (= (Tuple [(Var 'a) (Var 'b)])
+         (parse '(a * b))))
 
-  (testing "Can parse `[int?]`"
-    (let [sig (parse '[int?])]
-      (is (= (List (Predicate 'int?)) sig))))
+  (is (= (Tuple [(Var 'a) (Var 'b) (Var 'c) (Predicate 'int?)])
+         (parse '(a * b * c * int?))))
 
-  (testing "Can parse `[a]`"
-    (let [sig (parse '[a])]
-      (is (= (List (Var 'a)) sig))))
+  (is (= (List (Predicate 'int?))
+         (parse '[int?])))
 
-  (testing "Can parse `maybe? a`"
-    (let [sig (parse '(maybe? a))]
-      (is (= (Param (Predicate 'maybe?) [(Var 'a)]) sig))))
+  (is (= (List (Var 'a))
+         (parse '[a])))
 
-  (testing "Can parse `either? a b`"
-    (let [sig (parse '(either? a b))]
-      (is (= (Param (Predicate 'either?) [(Var 'a) (Var 'b)]) sig))))
+  (is (= (Param (Predicate 'maybe?) [(Var 'a)])
+         (parse '(maybe? a))))
 
-  (testing "Can parse `1`"
-    (let [sig (parse 1)]
-      (is (= (Value 1) sig))))
+  (is (= (Param (Predicate 'either?) [(Var 'a) (Var 'b)])
+         (parse '(either? a b))))
 
-  (testing "Can parse `(+ n 1)`"
-    (let [sig (parse '(+ n 1))]
-      (is (= (Expr '+ [(Var 'n) (Value 1)]) sig))))
+  (is (= (Value 1) (parse 1)))
 
-  (testing "Can parse `vect? (+ n 1) int?`"
-    (let [sig (parse '(vect? (+ n 1) int?))]
-      (is (= (Param (Predicate 'vect?)
-                    [(Expr '+ [(Var 'n) (Value 1)]) (Predicate 'int?)]) sig))))
+  (is (= (Expr '+ [(Var 'n) (Value 1)])
+         (parse '(+ n 1)))))
 
-  (testing "Can parse `vect? (+ n 1) a`"
-    (let [sig (parse '(vect? (+ n 1) a))]
-      (is (= (Param (Predicate 'vect?)
-                    [(Expr '+ [(Var 'n) (Value 1)]) (Var 'a)]) sig))))
 
-  )
+(deftest nested-parse-test
 
-;; (parse '(list? a -> list? b -> (a -> b -> c) -> list? c))
+  (is (= (Tuple [(Param (Predicate 'maybe?) [(Var 'a)])
+                 (Param (Predicate 'maybe?) [(Var 'b)])])
+         (parse '(maybe? a * maybe? b))))
 
-(clojure.test/run-tests)
+  (is (= (Tuple [(Param (Predicate 'maybe?) [(Var 'a)])
+                 (Param (Predicate 'maybe?) [(Var 'b)])
+                 (List (Var 'c))])
+         (parse '(maybe? a * maybe? b * [c]))))
+
+  (is (= (Tuple [(Param (Predicate 'maybe?) [(Var 'a)])
+                 (Param (Predicate 'maybe?) [(Var 'b)])
+                 (List (Tuple [(Param (Predicate 'either?)
+                                      [(Var 'a) (Var 'b)])
+                               (List (Var 'c))]))])
+         (parse '(maybe? a * maybe? b * [(either? a b * [c])]))))
+
+  (is (= (Param (Predicate 'vect?)
+                [(Expr '+ [(Var 'n) (Value 1)]) (Predicate 'int?)])
+         (parse '(vect? (+ n 1) int?))))
+
+  (is (= (Param (Predicate 'vect?) [(Expr '+ [(Var 'n) (Value 1)]) (Var 'a)])
+         (parse '(vect? (+ n 1) a))))
+
+  (is (= (Param (Predicate 'either?)
+                [(Var 'a)
+                 (Param (Predicate 'either?)
+                        [(Var 'b)
+                         (Tuple [(Var 'a)
+                                 (Param (Predicate 'maybe?) [(Var 'b)])])])])
+         (parse '(either? a (either? b (a * (maybe? b))))))))
+
+
+(deftest function-parse-test
+
+  (is (= (Function [(Predicate 'int?)] (Predicate 'int?))
+         (parse '(int? -> int?))))
+
+  (is (= (Function [(Var 'a)] (Var 'b))
+         (parse '(a -> b))))
+
+  (is (= (Function [(Var 'a) (Var 'b)] (Var 'c))
+         (parse '(a -> b -> c))))
+
+  (is (= (Function [(List (Var 'a))] (Param (Predicate 'maybe?) [(Var 'a)]))
+         (parse '([a] -> maybe? a))))
+
+  (is (= (Function [(Param (Predicate 'vect?) [(Var 'n) (Var 'a)]) (Var 'a)]
+                   (Param (Predicate 'vect?)
+                          [(Expr '+ [(Var 'n) (Value 1)]) (Var 'a)]))
+         (parse '(vect? n a -> a -> vect? (+ n 1) a))))
+
+  (is (= (Function [(Var 'a)
+                    (Function [(Var 'b) (Var 'c)]
+                              (Param (Predicate 'either?)
+                                     [(Var 'a)
+                                      (Function [(Var 'b)]
+                                                (Param (Predicate 'maybe?)
+                                                       [(Var 'a)]))]))]
+                   (Param (Predicate 'maybe?) [(Var 'a)]))
+         (parse '(a -> (b -> c -> (either? a (b -> maybe? a))) -> maybe? a))))
+
+  (is (= (Function [(Param (Predicate 'list?) [(Var 'a)])
+                    (Param (Predicate 'list?) [(Var 'b)])
+                    (Function [(Var 'a) (Var 'b)] (Var 'c))]
+                   (Param (Predicate 'list?) [(Var 'c)])))))
+
+
+;; (clojure.test/run-tests)
