@@ -19,9 +19,6 @@
      (swap! type-env assoc '~(ns-qualify sym) (parse-type-signature '~sig))
      (s/def ~sym ~(to-spec (parse-type-signature sig)))))
 
-(defmacro vdef [sym sig]
-  `(def ~sym (parse ::impl/type '~sig)))
-
 (defn check-ns [ns]
   (let [syms (set (filter #(and (symbol? %) (= (name ns) (namespace %)))
                           (o/instrumentable-syms)))]
@@ -43,8 +40,8 @@
            (prn res#)
            (:clojure.spec.alpha/problems (ex-data res#))))))
 
-(sdef env?, type?)
-(vdef env? (int? * int?))
+;; (sdef env?, type?)
+;; (vdef env? (int? * int?))
 
 (s/def ::bindings
   (s/and vector? (s/+ (s/cat :sym simple-symbol? :form any?))))
@@ -54,19 +51,15 @@
          :bindings ::bindings
          :expr     (s/or :spec seq? :pred `Predicate)))
 
-{:where where,
- :bindings [{:sym n, :form count}
-            {:sym t, :form (comp (partial reduce unify t) (partial map type))}],
- :expr [:spec (s/coll-of t :into [] :kind vector? :min-count n :max-count n)]}
-
 (defmacro where
   {:style/indent :defn}
   [bindings spec]
   (assert nil "`where` not used inside `data`"))
 
 (defmacro data
+  "Args are derived from the sig, and they *must* be named"
   {:style/indent :defn}
-  [sym args expr]
+  [sym sig expr]
   (let [ns-sym (ns-qualify sym)
         conformed (s/conform ::data expr)]
     (if (= ::s/invalid conformed)
@@ -78,24 +71,74 @@
             bindings (->> bindings
                           (map (fn [{:keys [sym form]}]
                                  [(list 'quote sym) form]))
-                          (into (array-map)))]
+                          (into (array-map)))
+            sig (parse-type-signature sig)
+            args (mapv :name (:args (:sig sig)))]
         `(defn ~sym ~args
            (Dependent
             '~sym
             ~args
             ~bindings
-            (get @type-env '~ns-sym)
-            (fn ~args ~(second expr))))))))
+            ~sig
+            (let ~(vec (mapcat (fn [{:keys [name type]}]
+                                 [name
+                                  (if (type-type? type)
+                                    `(cond (s/valid? `Predicate ~name)
+                                           ~name
+                                           (s/valid? `Var ~name)
+                                           any?
+                                           :default
+                                           (throw
+                                            (IllegalArgumentException. (str '~name ": " ~name))))
+                                    `(when-not (s/valid? `Var ~name)
+                                       (if (~(:pred type) ~name)
+                                         ~name
+                                         (throw
+                                          (IllegalArgumentException.
+                                           (str '~name ": " ~name " not " ~(pr-str type)))))))])
+                               (:args (:sig sig))))
+              ~(second expr))))))))
 
-(sdef vect?, nat-int? -> type? -> type?)
-(data vect? [n t]
+(defn unification-error [ta tb b]
+  (throw
+   (Exception. (format "Types do not unify: %s, %s with value %s" ta tb b))))
+
+(defn unify-types [ta b]
+  (let [tb (type b)]
+    (if (= ta tb)
+      ta
+      (unification-error ta tb b))))
+
+(defn unify-seq [[head & tail]]
+  (reduce unify-types (type head) tail))
+
+(data vect? (:n nat-int? -> :t type? -> type?)
   (where [n count
-          t (comp (partial reduce 'unify t) (partial map type))]
-    (s/coll-of t :into [] :kind vector? :min-count n :max-count n)))
+          t unify-seq]
+    (s/coll-of t :into [] :kind vector? :count n)))
 
-(vect? '1 'int?)
+;; (vect? 'a 'a)
 
-;;
+;; #t/sig (:n nat-int? -> :t type? -> type?)
+
+;; where there is a value that can be left unspecified, we can write a spec
+;; with/without it
+
+;; If t is a type-variable, and not a type (predicate?) then we need a way to
+;; discover t
+;; To discover t, we need a function that will give us t
+;; The function that gives us t, in this case, needs to take all the ts and give
+;; us the _most general t_.
+;; We would then need to use that same t and supply it to any other
+
+;; Unification is tricky in this language, because everything unifies to Object,
+;; *but* if we take a strict view, and 'a is not constrained, then the first 'a
+;; discovery of say int? would mean that all must unify to int?, no?
+;; We do want to be more strict by default. If the user wants less strictness,
+;; then they can supply a less definite type.
+
+;; For a generator, an unconstrained type variable really does mean any? -> or
+;; _every_ type
 
 ;;; We need a spec
 ;;; That also returns a value to the env when called with a value

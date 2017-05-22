@@ -18,7 +18,7 @@
 (defn predicate-name [x]
   (letfn [(predicate-ize [s]
             (->> (kebab-case s)
-                 (format "%s-type?")))]
+                 (format "type-%s?")))]
     (cond (symbol? x)  (symbol (predicate-ize (name x)))
           (keyword? x) (keyword (predicate-ize (name x)))
           (string? x)  (predicate-ize x)
