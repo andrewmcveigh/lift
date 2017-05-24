@@ -12,13 +12,22 @@
 
 (defprotocol Show (show [_]))
 
-(defprotocol ToSpec (to-spec [_]))
+(defprotocol ToSpec
+  (to-form [_])
+  (to-spec [_]))
 
 (defmacro basetype
   {:style/indent [2 1]}
   [tagname fields & extends]
   (let [classname (symbol (str (namespace-munge *ns*) ".types." tagname))
-        ex        (apply array-map extends)
+        ex        (->> extends
+                       (reduce (fn [[head & more :as init] x]
+                                 (if (s/valid? (s/and simple-symbol?
+                                                      #(re-matches #"^[A-Z]\w+$" (name %))) x)
+                                   (conj init [x []])
+                                   (conj more (update head 1 conj  x))))
+                               ())
+                       (into {}))
         pred      (predicate-name tagname)]
     `(do
        (declare ~pred)
@@ -82,10 +91,10 @@
                   ~@(apply concat (map (fn [j] [(keyword j) j]) fields))
                   default#))])
 
-         ~(or (get ex 'Show)
-              `(lift.shorthand/show [_] (apply pr-str ~fields)))
+         ~@(or (get ex 'Show)
+              `[(lift.shorthand/show [_] (apply pr-str ~fields))])
 
-         ~@(vals (dissoc ex 'Show)))
+         ~@(apply concat (vals (dissoc ex 'Show))))
 
        (defn ~tagname ~fields (new ~classname ~@fields; 0 0
                                    ))
@@ -103,6 +112,7 @@
   Show
   (show [_] "type?")
   ToSpec
+  (to-form [_] 'type?)
   (to-spec [_] 'type-type?))
 
 (basetype Unit []
@@ -111,13 +121,15 @@
 
 (basetype Var [var]
   ToSpec
-  (to-spec [_] (list 'quote var)))
+  (to-form [_] var)
+  (to-spec [_] any?))
 
 (basetype Value [value])
 
 (basetype Predicate [pred]
   ToSpec
-  (to-spec [_] pred))
+  (to-form [_] pred)
+  (to-spec [_] (deref (resolve pred))))
 
 (basetype Param [type args]
   Show
@@ -133,14 +145,22 @@
   Show
   (show [_] (format "(%s)" (string/join " * " (map pr-str fields))))
   ToSpec
+  (to-form [_]
+    `(s/tuple ~@(map to-form fields)))
   (to-spec [_]
-    `(s/tuple  ~@(map to-spec fields))))
+    (s/tuple-impl (map to-form fields) (map to-spec fields))))
 
 (basetype List [a]
   Show
   (show [_] (format "[%s]" (pr-str a)))
   ToSpec
-  (to-spec [_] `(s/coll-of ~(to-spec a))))
+  (to-form [_] `(s/coll-of ~(to-form a)))
+  (to-spec [_]
+    (s/every-impl (to-form a)
+                  (to-spec a)
+                  {::s/conform-all true
+                   ::s/describe `(s/coll-of ~(to-form a))
+                   ::s/cpred coll?})))
 
 (basetype Expr [op args]
   Show
@@ -171,16 +191,7 @@
               (pr-str op)
               (string/join " " (map pr-str args)))))
   ToSpec
-  (to-spec [_]
-    (let [val-bindings (->> (map vector (keys bindings) (:args sig))
-                            (remove (comp type-type? second))
-                            (into (array-map)))]
-          ;; type-check/bind each arg
-          ;; if type is not symbol?, and arg is Var, it's a type-value variable
-          ;; call the fn -> spec with
-          ;; n -> 'n
-          ;; a -> any?
-          spec)))
+  (to-spec [_] spec))
 
 (basetype Sig [sig]
   Show
