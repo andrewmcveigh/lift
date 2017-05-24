@@ -5,8 +5,10 @@
    [clojure.spec.test.alpha :as t]
    [clojure.string :as string]
    [lift.shorthand.impl :as impl :refer :all]
+   [lift.shorthand.syntax-quote :as sq]
    [lift.shorthand.util :refer :all]
-   [orchestra.spec.test :as o])
+   [orchestra.spec.test :as o]
+   [clojure.walk :as walk])
   (:import
    [clojure.lang ISeq]))
 
@@ -43,62 +45,6 @@
 ;; (sdef env?, type?)
 ;; (vdef env? (int? * int?))
 
-(s/def ::bindings
-  (s/and vector? (s/+ (s/cat :sym simple-symbol? :form any?))))
-
-(s/def ::data
-  (s/cat :where    #{'where}
-         :bindings ::bindings
-         :expr     (s/or :spec seq? :pred `Predicate)))
-
-(defmacro where
-  {:style/indent :defn}
-  [bindings spec]
-  (assert nil "`where` not used inside `data`"))
-
-(defmacro data
-  "Args are derived from the sig, and they *must* be named"
-  {:style/indent :defn}
-  [sym sig expr]
-  (let [ns-sym (ns-qualify sym)
-        conformed (s/conform ::data expr)]
-    (if (= ::s/invalid conformed)
-      (throw
-       (ex-info "`expr` did not conform to spec"
-                {:type ::s/invalid :explain-data (s/explain-data ::data expr)}))
-      (let [{:keys [bindings expr]} conformed
-            bound-syms (mapv :sym bindings)
-            bindings (->> bindings
-                          (map (fn [{:keys [sym form]}]
-                                 [(list 'quote sym) form]))
-                          (into (array-map)))
-            sig (parse-type-signature sig)
-            args (mapv :name (:args (:sig sig)))]
-        `(defn ~sym ~args
-           (Dependent
-            '~sym
-            ~args
-            ~bindings
-            ~sig
-            (let ~(vec (mapcat (fn [{:keys [name type]}]
-                                 [name
-                                  (if (type-type? type)
-                                    `(cond (s/valid? `Predicate ~name)
-                                           ~name
-                                           (s/valid? `Var ~name)
-                                           any?
-                                           :default
-                                           (throw
-                                            (IllegalArgumentException. (str '~name ": " ~name))))
-                                    `(when-not (s/valid? `Var ~name)
-                                       (if (~(:pred type) ~name)
-                                         ~name
-                                         (throw
-                                          (IllegalArgumentException.
-                                           (str '~name ": " ~name " not " ~(pr-str type)))))))])
-                               (:args (:sig sig))))
-              ~(second expr))))))))
-
 (defn unification-error [ta tb b]
   (throw
    (Exception. (format "Types do not unify: %s, %s with value %s" ta tb b))))
@@ -112,24 +58,110 @@
 (defn unify-seq [[head & tail]]
   (reduce unify-types (type head) tail))
 
+(s/def ::bindings
+  (s/and vector? (s/+ (s/cat :sym simple-symbol? :form any?))))
+
+(s/def ::data
+  (s/cat :where    #{'where}
+         :bindings ::bindings
+         :expr     (s/or :spec seq? :pred `Predicate)))
+
+(defmacro where
+  {:style/indent :defn}
+  [bindings spec]
+  (assert nil "`where` not used inside `data`"))
+
+(defn arg-err [msg]
+ (throw (IllegalArgumentException. msg)))
+
+(defn binding-map [args]
+  (->> args
+       (map (fn [{:keys [name type]}]
+              [name
+               (if (type-type? type)
+                 `(unquote
+                   (cond (s/valid? `Predicate ~name)
+                         ~name
+                         (s/valid? `Var ~name)
+                         `any?
+                         :default
+                         (arg-err (str '~name ": " ~name))))
+                 `(unquote
+                   (when-not (s/valid? `Var ~name)
+                     (if (~(:pred type) ~name)
+                       ~name
+                       (arg-err
+                        (str '~name ": " ~name " not " ~(pr-str type)))))))]))
+       (into (array-map))))
+
+(defmacro data
+  "Args are derived from the sig, and they *must* be named"
+  {:style/indent :defn}
+  [sym sig expr]
+  (let [ns-sym (ns-qualify sym)
+        conformed (s/conform ::data expr)]
+    (if (= ::s/invalid conformed)
+      (throw
+       (ex-info "`expr` did not conform to spec"
+                {:type ::s/invalid :explain-data (s/explain-data ::data expr)}))
+      (let [{:keys [bindings expr]} conformed
+            bound-syms (mapv :sym bindings)
+            bind-map (->> bindings
+                          (map (fn [{:keys [sym form]}]
+                                 [(list 'quote sym) form]))
+                          (into (array-map)))
+            sig (parse-type-signature sig)
+            args (mapv :name (:args (:sig sig)))]
+        `(defmacro ~sym ~args
+           `(Dependent
+             '~'~sym
+             '~~args
+             ~'~bind-map
+             ~~sig
+             (s/and
+              ~~(sq/syntax-quote
+                 (walk/postwalk-replace (binding-map (:args (:sig sig)))
+                                        (second expr)))
+              ~@(->> (:args (:sig ~sig))
+                     (map (fn [{:keys [~'sym ~'form]} {:keys [~'name ~'type]}]
+                            (when (and (type-type? ~'type)
+                                       (s/valid? `Var ~'sym))
+                              ~'form))
+                           ~(mapv (fn [x] (update x :form #(list 'quote %)))
+                                  bindings))
+                     (remove nil?)))))))))
+
 (data vect? (:n nat-int? -> :t type? -> type?)
   (where [n count
           t unify-seq]
     (s/coll-of t :into [] :kind vector? :count n)))
 
-;; (vect? 'a 'a)
+;; (s/conform (to-spec (vect? 2 number?)) [1 2.0 3])
+
+;;; jira this!
+;; (let [n 2
+;;       t int?]
+;;   (s/conform (s/coll-of t :into [] :kind vector? :count n) [1 2]))
+;; => [1 2]
+
+;; (let [n nil
+;;       t int?]
+;;   (s/conform (s/coll-of t :into [] :kind vector? :count n) [1 2]))
+;; => :clojure.spec.alpha/invalid
+
+;; (let [t int?]
+;;   (s/conform (s/coll-of t :into [] :kind vector? :count nil) [1 2]))
+;; => [1 2]
+
+;; (let [t int?]
+;;   (s/conform (s/coll-of t :into [] :kind vector? :count nil) [1 2]))
+
+;; (s/valid? (to-spec (List (Predicate 'int?))) [1])
+
+;; (s/exercise (to-spec (vect? 'n 'int?)) 2)
 
 ;; #t/sig (:n nat-int? -> :t type? -> type?)
 
-;; where there is a value that can be left unspecified, we can write a spec
-;; with/without it
-
-;; If t is a type-variable, and not a type (predicate?) then we need a way to
-;; discover t
-;; To discover t, we need a function that will give us t
-;; The function that gives us t, in this case, needs to take all the ts and give
-;; us the _most general t_.
-;; We would then need to use that same t and supply it to any other
 
 ;; Unification is tricky in this language, because everything unifies to Object,
 ;; *but* if we take a strict view, and 'a is not constrained, then the first 'a
