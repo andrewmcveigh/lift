@@ -136,6 +136,41 @@
           t unify-seq]
     (s/coll-of t :into [] :kind vector? :count n)))
 
+;; #t/sig ((:n nat-int? ** vect? 2 a) * (:n nat-int? ** vect? 2 a))
+
+(data hash-map? (:k type? :v type? -> type?)
+  (where
+    (empty  (hash-map? k v))
+    (assoc  (hash-map? k v -> k -> v -> hash-map? k v))
+    (dissoc (hash-map? k v -> k -> hash-map? k v))
+    (merge  (hash-map? k v -> hash-map? k v -> hash-map? k v))))
+
+(data list? (:a type? -> type?)
+  (where
+    (empty (list? a))
+    (cons  (a -> list? a -> list? a))))
+
+(data maybe? (:a type? -> type?)
+  (where
+    (nothing (maybe? :a))
+    (just    (x :a -> maybe? :a))))
+
+(data either? (:a type? :b type? -> type?)
+  (where
+    (left  (l :a -> either? :a))
+    (right (r :b -> either? :b))))
+
+(s/exercise (to-spec (Tuple [(vect? n a) (vect? n a)])) 5)
+
+;; TODO: test with other dependent types
+;; TODO: conform 2 dependent specs - start with dependent tuple? or  product?
+;; TODO: sum types
+
+;; How to inject type vars or val vars into env?
+;; Does each type need to pull specs from dependent children?
+;; How far does env go?
+;; TVars only last for a sig
+
 ;; (s/conform (to-spec (vect? 2 number?)) [1 2.0 3])
 
 ;;; jira this!

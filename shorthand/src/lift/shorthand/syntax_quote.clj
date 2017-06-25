@@ -22,7 +22,7 @@
 
 (def ^:private ^:dynamic gensym-env nil)
 
-(declare syntax-quote*)
+(declare syntax-quote)
 
 (defn- unquote-splicing? [form]
   (and (seq? form)
@@ -42,7 +42,7 @@
                        (cond
                         (unquote? item)          (list 'clojure.core/list (second item))
                         (unquote-splicing? item) (second item)
-                        :else                    (list 'clojure.core/list (syntax-quote* item))))]
+                        :else                    (list 'clojure.core/list (syntax-quote item))))]
         (recur (next s) ret))
       (seq (persistent! r)))))
 
@@ -89,7 +89,7 @@
 (defn- add-meta [form ret]
   (if (and (instance? IObj form)
            (seq (dissoc (meta form) :line :column :end-line :end-column :file :source)))
-    (list 'clojure.core/with-meta ret (syntax-quote* (meta form)))
+    (list 'clojure.core/with-meta ret (syntax-quote (meta form)))
     ret))
 
 (defn- syntax-quote-coll [type coll]

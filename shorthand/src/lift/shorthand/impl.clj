@@ -191,6 +191,7 @@
               (pr-str op)
               (string/join " " (map pr-str args)))))
   ToSpec
+  (to-form [_] (s/form spec))
   (to-spec [_] spec))
 
 (basetype Sig [sig]
