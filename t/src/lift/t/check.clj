@@ -4,6 +4,7 @@
    [clojure.string :as string]
    [lift.f.functor :as f :refer [Functor]]
    [lift.t.substitution :as sub :refer [sub Substitutable]]
+   [lift.t.syntax :as syn]
    [lift.t.type :as t]
    [lift.t.util :as u])
   (:import
@@ -195,52 +196,37 @@
 (defn infer [env [syn-type expr]]
   (case syn-type
 
-    :Lit [sub/id (t/Const expr)]
+    ::syn/Lit [sub/id (t/Const expr)]
 
-    :Var (if-let [s (get env expr)]
-           [sub/id (instantiate s)]
-           (ex-unbound-var expr))
+    ::syn/Var (if-let [s (get env expr)]
+                [sub/id (instantiate s)]
+                (ex-unbound-var expr))
 
-    :Lam (let [[x e]   expr
-               tv      (fresh)
-               env'    (assoc env x (Scheme. [] tv))
-               [s1 t1] (infer env' e)]
-           [s1 (sub (t/Arrow tv t1) s1)])
+    ::syn/Lam (let [[x e]   expr
+                    tv      (fresh)
+                    env'    (assoc env x (Scheme. [] tv))
+                    [s1 t1] (infer env' e)]
+                [s1 (sub (t/Arrow tv t1) s1)])
 
-    :App (let [[e1 e2] expr
-               tv      (fresh)
-               [s1 t1] (infer env e1)
-               [s2 t2] (infer (sub env s1) e2)
-               s3      (unify (sub t1 s2)
-                              (t/Arrow t2 tv))]
-           [(sub/compose s3 s2 s1) (sub tv s3)])
+    ::syn/App (let [[e1 e2] expr
+                    tv      (fresh)
+                    [s1 t1] (infer env e1)
+                    [s2 t2] (infer (sub env s1) e2)
+                    s3      (unify (sub t1 s2)
+                                   (t/Arrow t2 tv))]
+                [(sub/compose s3 s2 s1) (sub tv s3)])
 
-    :Let (let [[x e1 e2] expr
-               [s1 t1]   (infer env e1)
-               env'      (sub env s1)
-               t         (generalize env' t1)
-               [s2 t2]   (infer (assoc env' x t) e2)]
-           [(sub/compose s1 s2) t2])
+    ::syn/Let (let [[x e1 e2] expr
+                    [s1 t1]   (infer env e1)
+                    env'      (sub env s1)
+                    t         (generalize env' t1)
+                    [s2 t2]   (infer (assoc env' x t) e2)]
+                [(sub/compose s1 s2) t2])
 
-    :If  (let [[cond then else] expr
-               [s1 t1] (infer env cond)
-               [s2 t2] (infer env then)
-               [s3 t3] (infer env else)
-               s4      (unify t1 (t/Const 'boolean?))
-               s5      (unify t2 t3)]
-           [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)])))
-
-(infer (Env.)
-       [:If [[:App [[:Lam ['y [:Var 'y]]]
-                    [:Lit 'boolean?]]]
-             [:Lit 'int?]
-             [:Lit 'int?]]
-        ]
-       )
-
-;; (infer (Env.)
-;;        [:Let ['a [:Lit 'int?]
-;;               [:App [[:Lam ['y [:Var 'y]]] [:Var 'a]]]]])
-
-
-;; (infer (Env.) [:Lam ['x [:App [[:Lam ['y [:Var 'y]]] [:Var 'x]]]]])
+    ::syn/If  (let [[cond then else] expr
+                    [s1 t1] (infer env cond)
+                    [s2 t2] (infer env then)
+                    [s3 t3] (infer env else)
+                    s4      (unify t1 (t/Const 'boolean?))
+                    s5      (unify t2 t3)]
+                [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)])))
