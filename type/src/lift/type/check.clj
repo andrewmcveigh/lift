@@ -1,15 +1,15 @@
-(ns lift.t.check
+(ns lift.type.check
   (:require
    [clojure.set :as set]
    [clojure.string :as string]
    [lift.f.functor :as f :refer [Functor]]
-   [lift.t.substitution :as sub :refer [sub Substitutable]]
-   [lift.t.syntax :as syn]
-   [lift.t.type :as t]
-   [lift.t.util :as u])
+   [lift.type.substitution :as sub :refer [sub Substitutable]]
+   [lift.type.syntax :as syn]
+   [lift.type.type :as t]
+   [lift.type.util :as u])
   (:import
-   [lift.t.substitution Sub]
-   [lift.t.type.types Unit Const Var Arrow Product Sum]))
+   [lift.type.substitution Sub]
+   [lift.type.type.types Unit Const Var Arrow Product Sum]))
 
 (defrecord Env []
   Functor

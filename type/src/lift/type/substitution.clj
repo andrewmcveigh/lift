@@ -1,7 +1,7 @@
-(ns lift.t.substitution
+(ns lift.type.substitution
   (:require
    [lift.f.functor :as f :refer [Functor]]
-   [lift.t.type :as t :refer [Show]]
+   [lift.type.type :as t :refer [Show]]
    [clojure.string :as string]))
 
 (defprotocol Substitutable

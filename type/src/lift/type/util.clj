@@ -1,4 +1,4 @@
-(ns lift.t.util
+(ns lift.type.util
   (:require [clojure.string :as string]))
 
 (defn res [s]

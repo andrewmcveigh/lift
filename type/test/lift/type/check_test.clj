@@ -1,9 +1,10 @@
-(ns lift.t.check-test
+(ns lift.type.check-test
   (:require
    [clojure.test :refer [deftest is testing]]
-   [lift.t.check :refer [unify]]
-   [lift.t.substitution :as sub]
-   [lift.t.type :as t]))
+   [lift.type.check :as check :refer [infer unify]]
+   [lift.type.substitution :as sub]
+   [lift.type.syntax :as syn]
+   [lift.type.type :as t]))
 
 (def Int (t/Const 'int?))
 (def Bool (t/Const 'bool?))
@@ -49,6 +50,39 @@
                 (t/Sum (t/Var 'a) (t/Var 'b)))
   )
 
+(infer
+ (check/map->Env {'+ (check/->Scheme
+                      #{}
+                      (t/Arrow (t/Const 'integer?)
+                               (t/Arrow (t/Const 'integer?)
+                                        (t/Const 'integer?))))
+                  'even? (check/->Scheme
+                          #{}
+                          (t/Arrow (t/Const 'integer?)
+                                   (t/Const 'boolean?)))})
+
+ (syn/parse '(let [x 1] (even? (+ x 2)))))
+
+
+
+
+
+
+
+;; (infer (Env.)
+;;        [:If [[:App [[:Lam ['y [:Var 'y]]]
+;;                     [:Lit 'boolean?]]]
+;;              [:Lit 'int?]
+;;              [:Lit 'int?]]
+;;         ]
+;;        )
+
+;; (infer (Env.)
+;;        [:Let ['a [:Lit 'int?]
+;;               [:App [[:Lam ['y [:Var 'y]]] [:Var 'a]]]]])
+
+
+;; (infer (Env.) [:Lam ['x [:App [[:Lam ['y [:Var 'y]]] [:Var 'x]]]]])
 (comment
 
   (clojure.test/run-tests)

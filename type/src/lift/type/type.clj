@@ -1,9 +1,9 @@
-(ns lift.t.type
+(ns lift.type.type
   (:refer-clojure :exclude [type])
   (:require
    [clojure.spec.alpha :as s]
    [clojure.string :as string]
-   [lift.t.util :as u]))
+   [lift.type.util :as u]))
 
 (alias 'c 'clojure.core)
 

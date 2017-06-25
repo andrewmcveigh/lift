@@ -1,6 +1,6 @@
-(ns lift.t.syntax
-  (:require [clojure.spec.alpha :as s]
-            [clojure.walk :as walk]))
+(ns lift.type.syntax
+  (:require
+   [clojure.spec.alpha :as s]))
 
 (s/def ::literal
   (s/or ::boolean? boolean?
