@@ -40,3 +40,5 @@
   (if-let [ns-sym (some-> s namespace symbol)]
     (or (some-> (get (ns-aliases *ns*) ns-sym) str (symbol (name s))) s)
     (symbol (str (.name *ns*)) (str s))))
+
+(def vars (map (comp symbol str char) (range 97 123)))
