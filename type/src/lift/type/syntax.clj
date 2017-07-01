@@ -7,11 +7,18 @@
         ::char?    char?
         ::string?  string?
         ::integer? integer?
+        ::double?  double?
         ::decimal? decimal?
         ::keyword? keyword?))
 
 (def literal-map
-  (->> ::literal s/describe rest (apply hash-map)))
+  '{::boolean? Bool
+    ::char?    Char
+    ::string?  String
+    ::integer? Int
+    ::double?  Double
+    ::decimal? Decimal
+    ::keyword? Keyword})
 
 (s/def ::var simple-symbol?)
 
