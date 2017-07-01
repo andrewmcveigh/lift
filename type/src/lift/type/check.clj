@@ -29,11 +29,14 @@
   Var
   (free [x] #{(.v x)})
   Arrow
-  (free [x] (set/union (free (.a x)) (free (.b x))))
+  (free [x]
+    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
   Product
-  (free [x] (set/union (free (.a x)) (free (.b x))))
+  (free [x]
+    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
   Sum
-  (free [x] (set/union (free (.a x)) (free (.b x))))
+  (free [x]
+    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
   Env
   (free [x] (set (map free (vals x))))
   Scheme
@@ -56,7 +59,9 @@
     (t/Product (sub (.a x) subst) (sub (.b x) subst)))
   Sum
   (sub [x subst]
-    (t/Sum (sub (.a x) subst) (sub (.b x) subst)))
+    (t/Sum (.tag x)
+           (some-> (.a x) (sub subst))
+           (some-> (.b x) (sub subst))))
   Sub
   (sub [x subst]
     (f/map (fn [[term var :as s]]
