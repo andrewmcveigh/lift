@@ -5,21 +5,17 @@
    [lift.f.functor :as f :refer [Functor]]
    [lift.type.substitution :as sub :refer [sub Substitutable]]
    [lift.type.syntax :as syn]
-   [lift.type.type :as t]
+   [lift.type.type :as t :refer [Free free]]
    [lift.type.util :as u])
   (:import
    [lift.type.substitution Sub]
+   [lift.type.type Scheme]
    [lift.type.type.types Unit Const Var Arrow Product Sum]))
 
 (defrecord Env []
   Functor
   (-map [x f]
     (map->Env (f/map f (into {} x)))))
-
-(defrecord Scheme [vars t])
-
-(defprotocol Free
-  (free [_]))
 
 (extend-protocol Free
   Unit

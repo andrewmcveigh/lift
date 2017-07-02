@@ -11,6 +11,7 @@
 (defprotocol Read        (read [_]))
 (defprotocol Show        (show [_]))
 (defprotocol Destructure (destructure [_]))
+(defprotocol Free        (free [_]))
 
 (defmacro print-show [& types]
   `(do
@@ -136,6 +137,8 @@
     (op a (curry-syntax op (cons b tail)))
     (op a b)))
 
+(defrecord Scheme [vars t])
+
 ;;; How much of this belongs in here?
 
 (def type-env (atom {}))
@@ -250,7 +253,9 @@
   (swap! type-env assoc (.tag type-cons) type-cons))
 
 (defn def-value-cons [sym signature]
-  (swap! expr-env assoc (u/ns-qualify sym) signature))
+  (swap! expr-env assoc
+         (u/ns-qualify sym)
+         (->Scheme (free signature) signature)))
 
 (defn param-value-cons [[_ n] type-cons]
   (let [tag (::Const n)
