@@ -19,6 +19,11 @@
                  (.write w# (show x#))))
             types)))
 
+(defmethod print-method Object [x w]
+  (if (satisfies? Show x)
+    (.write w (show x))
+    (.write w (#'clojure.core/print-object x w))))
+
 (defn base-classname [tagname]
   (symbol (str (namespace-munge *ns*) ".types." tagname)))
 
@@ -257,7 +262,9 @@
 (defn value-cons [type [t n]]
   (case t
     ::Const `((def-value-cons '~n ~type)
-              (def ~n (Object.)))
+              (def ~n
+                (reify Show
+                  (show [_] ~(name n)))))
     ::Parameterized (param-value-cons n type)))
 
 (defn sum-value-cons [node type-cons]
@@ -271,9 +278,11 @@
     (let [type-cons (type-cons `Product n)]
       (concat
        `(do (def-type-cons ~type-cons))
-       (param-value-cons (:value-cons n) type-cons)))
+       (param-value-cons (:value-cons n) type-cons))
+      type-cons)
     ::sum
     (let [type-cons (type-cons `Sum n)]
       (concat
        `(do (def-type-cons ~type-cons))
-       (sum-value-cons n type-cons)))))
+       (sum-value-cons n type-cons))
+      type-cons)))

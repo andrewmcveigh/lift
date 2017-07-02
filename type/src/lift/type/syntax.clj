@@ -45,13 +45,22 @@
                 ::then ::expr
                 ::else ::expr)))
 
+(s/def ::vector
+  (s/coll-of ::expr :kind vector?))
+
 (s/def ::expr
   (s/or ::Lit ::literal
         ::Var ::var
         ::Lam ::lambda
         ::App ::application
         ::Let ::let
-        ::If  ::if))
+        ::If  ::if
+        ::Vec ::vector))
+
+(defn curry [op args]
+  (if (seq args)
+    (recur [::App [op (first args)]] (rest args))
+    op))
 
 (defn normalize [[syn-type node]]
   (case syn-type
@@ -59,18 +68,16 @@
     ::Var [::Var node]
     ::Lam [::Lam [(first (::bind node))
                   (normalize (::expr node))]]
-    ::App (letfn [(app [op args]
-                    (if (seq args)
-                      (recur [::App [op (first args)]] (rest args))
-                      op))]
-            (app (normalize (::op node))
-                 (map normalize (::args node))))
+    ::App (curry (normalize (::op node))
+                 (map normalize (::args node)))
     ::Let [::Let [(first (::bind node))
                   (normalize (second (::bind node)))
                   (normalize (::expr node))]]
     ::If  [::If [(normalize (::cond node))
                  (normalize (::then node))
-                 (normalize (::else node))]]))
+                 (normalize (::else node))]]
+    ::Vec (curry [::Var 'VCons]
+                 (conj (mapv normalize node) [::Var 'VNil]))))
 
 (defn parse [expr]
   (let [ast (s/conform ::expr expr)]
@@ -79,3 +86,7 @@
         (s/explain ::expr expr)
         (throw (Exception. "Invalid Syntax")))
       (normalize ast))))
+
+
+;;; TODO: How to elaborate syntax such as [a] -> (vector a)
+;;; TODO: How to varargs

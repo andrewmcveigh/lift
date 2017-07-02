@@ -13,7 +13,9 @@
      (swap! t/expr-env assoc
             '~sym (check/->Scheme (check/free sig#) sig#))))
 
-(defmacro data [& decl]
+(defmacro data
+  {:style/indent :defn}
+  [& decl]
   (t/data-cons (t/parse-data decl)))
 
 (defmacro defn [name args expr]
@@ -23,3 +25,8 @@
         declared     (:t (get @t/expr-env name))]
     (assert (check/unify inferred declared))
     `(c/defn ~name ~args ~expr)))
+
+(defmacro check [expr]
+  `(check/infer
+    (check/map->Env @t/expr-env)
+    (syn/parse '~expr)))
