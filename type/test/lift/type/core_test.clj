@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [defn inc dec])
   (:require
    [clojure.test :refer [deftest is]]
-   [lift.type.core :as type :refer [data defn tdef]]
+   [lift.type.core :as type :refer [data defn tdef T]]
    [lift.type.check :as check]
    [lift.type.syntax :as syn]
    [lift.type.type :as t]
@@ -11,6 +11,11 @@
    [clojure.lang ExceptionInfo]))
 
 (alias 'c 'clojure.core)
+
+(type/const Char char?)
+(type/const Int integer?)
+(type/const Double double?)
+(type/const String string?)
 
 (data Bool = True | False)
 
@@ -46,15 +51,16 @@
 
 (deftest expr-type-check-test
 
-  (is (= (t/Sum 'Bool []) (type/check True)))
+  (is (= (T Bool) (type/check True)))
+  (is (= (T Bool) (type/check False)))
 
-  (is (= (t/Sum 'Bool [])
+  (is (= (T Bool)
          (type/check (let [x 1] (even? (+ x 2))))))
 
-  (is (= (t/Const 'Int)
+  (is (= (T Int)
          (type/check (let [x 1] (dec (inc (+ x 2)))))))
 
-  (is (= (t/Const 'Bool)
+  (is (= (T Bool)
          (type/check (let [x 1]
                        (let [y (dec (inc (+ x 2)))]
                          (<= x (dec y)))))))
@@ -63,13 +69,13 @@
    (type/check (let [x 1]
                     (let [y (dec (inc (+ x 2)))]
                       (+ 2 (<= x (dec y))))))
-   (t/Const 'Int)
-   (t/Const 'Bool))
+   (T Int)
+   (T Bool))
 
   (cannot-unify
    (type/check (== 1 ""))
-   (t/Const 'Int)
-   (t/Const 'String)))
+   (T Int)
+   (T String)))
 
 (data List a = Nil | Cons a (List a))
 
@@ -85,21 +91,6 @@
 ;; (syn/parse '(VCons 1 VNil))
 
 ;; (type/check (fn [y] (VCons y VNil)))
-
-
-(type/check True)
-
-
-
-;;; TODO: literal True doesn't check due to no resolution
-
-;; (type/check (VCons 1 VNil))
-;;; TODO: above ^^ doesn't check due to no resolution
-
-;; (VCons 1 VNil)
-;;; TODO: ^^ how to get type?
-
-;; (keys @t/expr-env)
 
 (data Expr
   = Var String

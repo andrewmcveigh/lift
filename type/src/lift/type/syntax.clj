@@ -2,23 +2,15 @@
   (:require
    [clojure.spec.alpha :as s]))
 
-(s/def ::literal
-  (s/or ::boolean? boolean?
-        ::char?    char?
-        ::string?  string?
-        ::integer? integer?
-        ::double?  double?
-        ::decimal? decimal?
-        ::keyword? keyword?))
+(def lits (atom {}))
 
-(def literal-map
-  '{::boolean? Bool
-    ::char?    Char
-    ::string?  String
-    ::integer? Int
-    ::double?  Double
-    ::decimal? Decimal
-    ::keyword? Keyword})
+(defmacro deflit [type parser]
+  (let [litmap (assoc @lits (keyword (name type)) [parser type])
+        ormap  (map (fn [[k [s]]] [k s]) litmap)]
+    `(do
+       (reset! lits '~litmap)
+       (s/def :lift.type.syntax/literal
+         (s/or ~@(apply concat ormap))))))
 
 (s/def ::var symbol?)
 
@@ -64,7 +56,7 @@
 
 (defn normalize [[syn-type node]]
   (case syn-type
-    ::Lit [::Lit (get literal-map (first node))]
+    ::Lit [::Lit (->> node first (get @lits) second)]
     ::Var [::Var node]
     ::Lam [::Lam [(first (::bind node))
                   (normalize (::expr node))]]
