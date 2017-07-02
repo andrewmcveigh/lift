@@ -79,6 +79,4 @@
         (throw (Exception. "Invalid Syntax")))
       (normalize ast))))
 
-
-;;; TODO: How to elaborate syntax such as [a] -> (vector a)
 ;;; TODO: How to varargs

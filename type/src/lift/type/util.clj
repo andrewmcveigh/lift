@@ -50,3 +50,8 @@
       (ns-qualify s)))
 
 (def vars (map (comp symbol str char) (range 97 123)))
+
+(defn curry [op [a b & tail]]
+  (if (seq tail)
+    (op a (curry op (cons b tail)))
+    (op a b)))

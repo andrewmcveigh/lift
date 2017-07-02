@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [defn])
   (:require
    [lift.type.check :as check]
+   [lift.type.parse :as parse]
    [lift.type.syntax :as syn]
    [lift.type.type :as t]
    [lift.type.util :as u]))
@@ -10,13 +11,14 @@
 
 (defmacro tdef [sym & sig]
   `(let [sym# (u/resolve-sym '~sym)
-         sig# (t/parse-type-signature '~sig)]
-     (swap! t/expr-env assoc sym# (t/->Scheme (t/free sig#) sig#))))
+         sig# (parse/type-signature '~sig)]
+     (swap! t/expr-env assoc sym# (t/->Scheme (t/free sig#) sig#))
+     sig#))
 
 (defmacro data
   {:style/indent :defn}
   [& decl]
-  (t/data-cons (t/parse-data decl)))
+  (parse/data-cons (parse/data decl)))
 
 (c/defn -check [expr]
   (->> expr

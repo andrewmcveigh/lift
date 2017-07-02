@@ -6,7 +6,8 @@
    [lift.type.check :as check]
    [lift.type.syntax :as syn]
    [lift.type.type :as t]
-   [lift.type.util :as u])
+   [lift.type.util :as u]
+   [lift.type.parse :as parse])
   (:import
    [clojure.lang ExceptionInfo]))
 
@@ -18,6 +19,14 @@
 (type/const String string?)
 
 (data Bool = True | False)
+
+(deftest tdef-test
+  (is
+   (try
+     (tdef should-break Wonk -> Stink)
+     false
+     (catch ExceptionInfo e
+       (-> e ex-data :type (= ::parse/unknown-type))))))
 
 (tdef + Int -> Int -> Int)
 (tdef * Int -> Int -> Int)
