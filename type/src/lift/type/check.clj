@@ -194,7 +194,7 @@
 (defn instantiate [scheme]
   (let [vars  (:vars scheme)
         vars' (map (fn [_] (fresh)) vars)
-        subst (Sub. (interleave vars vars'))]
+        subst (Sub. (mapv vector vars vars'))]
     (sub (:t scheme) subst)))
 
 (defn generalize [env t]
@@ -205,7 +205,8 @@
 
     ::syn/Lit [sub/id (t/Const expr)]
 
-    ::syn/Var (if-let [s (get env expr)]
+    ::syn/Var (if-let [s (or (get env expr)
+                             (get env (u/resolve-sym expr)))]
                 [sub/id (instantiate s)]
                 (ex-unbound-var expr))
 

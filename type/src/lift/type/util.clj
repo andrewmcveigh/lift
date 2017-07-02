@@ -41,4 +41,12 @@
     (or (some-> (get (ns-aliases *ns*) ns-sym) str (symbol (name s))) s)
     (symbol (str (.name *ns*)) (str s))))
 
+(defn ->sym [v]
+  (symbol (name (.getName (:ns (meta v))))
+          (name (:name (meta v)))))
+
+(defn resolve-sym [s]
+  (or (some-> s resolve ->sym)
+      (ns-qualify s)))
+
 (def vars (map (comp symbol str char) (range 97 123)))

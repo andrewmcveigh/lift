@@ -29,7 +29,7 @@
   (symbol (str (namespace-munge *ns*) ".types." tagname)))
 
 (defmacro base
-  {:style/indent [2 1]}
+  {:style/indent :defn}
   [tagname & [fields? & extends]]
   (let [fields    (if (vector? fields?) fields? [])
         extends   (cond (vector? fields?) extends
@@ -113,9 +113,17 @@
 
 (defn base? [x] (instance? Base x))
 
-(base Unit)
-(base Const [t])
-(base Var   [v])
+(base Unit
+  Show
+  (show [_] "()"))
+
+(base Const [t]
+  Show
+  (show [_] (pr-str t)))
+
+(base Var [v]
+  Show
+  (show [_] (pr-str v)))
 
 (base Arrow [a b]
   Show
@@ -167,6 +175,9 @@
 (defmethod construct ::Unit  [[_ ast]] (Unit))
 
 (defmethod construct ::Const [[_ ast]] (Const ast))
+;;; TODO: type-name ^^ is not always a const type, e.g., in the case of Bool
+;;; it's a Sum type, in the case of Point, it's a product. Theres a difference
+;;; between the syntactic type-type, and the meaning, depends on env lookup
 
 (defmethod construct ::Var   [[_ ast]] (Var ast))
 
@@ -268,7 +279,7 @@
     ::Const `((def-value-cons '~n ~type)
               (def ~n
                 (reify Show
-                  (show [_] ~(name n)))))
+                  (show [_#] ~(name n)))))
     ::Parameterized (param-value-cons n type)))
 
 (defn sum-value-cons [node type-cons]
@@ -282,11 +293,11 @@
     (let [type-cons (type-cons `Product n)]
       (concat
        `(do (def-type-cons ~type-cons))
-       (param-value-cons (:value-cons n) type-cons))
-      type-cons)
+       (param-value-cons (:value-cons n) type-cons)
+       [type-cons]))
     ::sum
     (let [type-cons (type-cons `Sum n)]
       (concat
        `(do (def-type-cons ~type-cons))
-       (sum-value-cons n type-cons))
-      type-cons)))
+       (sum-value-cons n type-cons)
+       [type-cons]))))

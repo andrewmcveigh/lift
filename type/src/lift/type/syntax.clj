@@ -20,7 +20,7 @@
     ::decimal? Decimal
     ::keyword? Keyword})
 
-(s/def ::var simple-symbol?)
+(s/def ::var symbol?)
 
 (s/def ::lambda
   (s/and seq?
@@ -52,8 +52,8 @@
   (s/or ::Lit ::literal
         ::Var ::var
         ::Lam ::lambda
-        ::App ::application
         ::Let ::let
+        ::App ::application
         ::If  ::if
         ::Vec ::vector))
 

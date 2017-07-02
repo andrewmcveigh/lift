@@ -9,24 +9,26 @@
 (alias 'c 'clojure.core)
 
 (defmacro tdef [sym & sig]
-  `(let [sig# (t/parse-type-signature '~sig)]
+  `(let [sym# (u/resolve-sym '~sym)
+         sig# (t/parse-type-signature '~sig)]
      (swap! t/expr-env assoc
-            '~sym (check/->Scheme (check/free sig#) sig#))))
+            sym# (t/->Scheme (t/free sig#) sig#))))
 
 (defmacro data
   {:style/indent :defn}
   [& decl]
   (t/data-cons (t/parse-data decl)))
 
+(defmacro check [expr]
+  `(->> '~expr
+        (syn/parse)
+        (check/infer (check/map->Env @t/expr-env))
+        (second)))
+
 (defmacro defn [name args expr]
   (let [[_ inferred] (check/infer
                       (check/map->Env @t/expr-env)
                       (syn/parse (list 'fn args expr)))
-        declared     (:t (get @t/expr-env name))]
+        declared     (:t (get @t/expr-env (u/resolve-sym name)))]
     (assert (check/unify inferred declared))
     `(c/defn ~name ~args ~expr)))
-
-(defmacro check [expr]
-  `(check/infer
-    (check/map->Env @t/expr-env)
-    (syn/parse '~expr)))
