@@ -122,15 +122,15 @@
   (show [_]
     (format "(%s -> %s)" (pr-str a) (pr-str b))))
 
-(base Product [tag a b]
+(base Product [tag vars]
   Show
   (show [_]
-    (format "%s %s" (pr-str a) (pr-str b))))
+    (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))))
 
-(base Sum [tag a b]
+(base Sum [tag vars]
   Show
   (show [_]
-    (format "(%s %s %s)" (name tag) (pr-str a) (pr-str b))))
+    (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))))
 
 (defn curry-syntax [op [a b & tail]]
   (if (seq tail)
@@ -184,7 +184,7 @@
                                 (type-sum? reg)
                                 (partial Sum tag))]
             (let [args (map construct (:args x))]
-              (curry-syntax ctor args))))
+              (ctor args))))
         (throw (Exception. (format "Unknown Type %s" tag))))))
 
 (s/def ::type
@@ -245,9 +245,8 @@
 (defn type-cons [type node]
   (let [[t n] (::type-cons node)]
     (case t
-      :l-type-cons `(~type '~n nil nil)
-      :p-type-cons `(curry-syntax (partial ~type '~(::Const n))
-                                  (map Var '~(::type-params n))))))
+      :l-type-cons `(~type '~n [])
+      :p-type-cons `(~type '~(::Const n) (mapv Var '~(::type-params n))))))
 
 (defn def-type-cons [type-cons]
   (swap! type-env assoc (.tag type-cons) type-cons))

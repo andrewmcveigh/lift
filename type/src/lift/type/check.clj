@@ -29,10 +29,10 @@
     (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
   Product
   (free [x]
-    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
+    (apply set/union (map free (.vars x))))
   Sum
   (free [x]
-    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
+    (apply set/union (map free (.vars x))))
   Env
   (free [x] (set (map free (vals x))))
   Scheme
@@ -52,12 +52,10 @@
     (t/Arrow (sub (.a x) subst) (sub (.b x) subst)))
   Product
   (sub [x subst]
-    (t/Product (sub (.a x) subst) (sub (.b x) subst)))
+    (t/Product (.tag x) (map #(sub % subst) (.vars x))))
   Sum
   (sub [x subst]
-    (t/Sum (.tag x)
-           (some-> (.a x) (sub subst))
-           (some-> (.b x) (sub subst))))
+    (t/Sum (.tag x) (map #(sub % subst) (.vars x))))
   Sub
   (sub [x subst]
     (f/map (fn [[term var :as s]]
@@ -88,7 +86,10 @@
 
 (defn ex-cannot-unify [a b]
   (throw
-   (Exception. (format "Cannot unify %s and %s" (pr-str a) (pr-str b)))))
+   (ex-info (format "Cannot unify %s and %s" (pr-str a) (pr-str b))
+            {:type ::ex-cannot-unify
+             :a a
+             :b b})))
 
 (defn ex-arity [a b]
   (throw
@@ -103,19 +104,24 @@
         (occurs? a t)   (ex-infitite-type a t)
         :otherwise      (sub/singleton a t)))
 
-(defn unify-seq [s1 ts1 ts2]
-  (if (and (empty? ts1) (empty? ts2))
-    s1
-    (let [[t1 & t1s] ts1
-          [t2 & t2s] ts2
-          s2 (trampoline unify t1 t2)]
-      (recur (sub/compose s2 s1) t1s t2s))))
+(defn unify-seq [t1 t2]
+  (let [ts1 (.vars t1)
+        ts2 (.vars t2)]
+    (if (= (count ts1) (count ts2))
+      (loop [s1 sub/id ts1 ts1 ts2 ts2]
+        (if (and (empty? ts1) (empty? ts2))
+          s1
+          (let [[t1 & t1s] ts1
+                [t2 & t2s] ts2
+                s2 (trampoline unify t1 t2)]
+            (recur (sub/compose s2 s1) t1s t2s))))
+      (ex-arity t1 t2))))
 
 (defn unify-pair [t1 t2]
   (if (= t1 t2)
     sub/id
-    (let [s1 (unify (.a t1) (.a t2))
-          s2 (unify (sub (.b t1) s1) (sub (.b t2) s1))]
+    (let [s1 (trampoline unify (.a t1) (.a t2))
+          s2 (trampoline unify (sub (.b t1) s1) (sub (.b t2) s1))]
       (sub/compose s2 s1))))
 
 (defmethod unify [Const Const] [a b]
@@ -149,7 +155,7 @@
 
 (defmethod unify [Product Product]
   [t1 t2]
-  (unify-pair t1 t2))
+  (unify-seq t1 t2))
 
 (defmethod unify [Product Var]
   [t1 t2]
@@ -161,7 +167,7 @@
 
 (defmethod unify [Sum Sum]
   [t1 t2]
-  (unify-pair t1 t2))
+  (unify-seq t1 t2))
 
 (defmethod unify [Sum Var]
   [t1 t2]
