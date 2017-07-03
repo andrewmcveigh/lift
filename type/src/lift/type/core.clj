@@ -1,5 +1,5 @@
 (ns lift.type.core
-  (:refer-clojure :exclude [defn])
+  (:refer-clojure :exclude [defn type])
   (:require
    [lift.type.check :as check]
    [lift.type.parse :as parse]
@@ -43,3 +43,8 @@
      (swap! t/type-env assoc '~name t#)
      (syn/deflit ~name ~parser)
      t#))
+
+(c/defn type [x]
+  (or (some-> x meta :type)
+      (let [[t n] (syn/parse x)]
+        (when (= ::syn/Lit t) (t/Const n)))))

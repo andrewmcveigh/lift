@@ -10,7 +10,8 @@
   (:import
    [lift.type.substitution Sub]
    [lift.type.type Scheme]
-   [lift.type.type.types Unit Const Var Arrow Product Sum]))
+   [lift.type.type.types
+    Unit Const Var Arrow Product Sum Constraint Constrained]))
 
 (defrecord Env []
   Functor
@@ -33,6 +34,12 @@
   Sum
   (free [x]
     (apply set/union (map free (.vars x))))
+  Constraint
+  (free [x]
+    (apply set/union (map free (.vars x))))
+  Constrained
+  (free [x]
+    (set/union (free (.constraint x)) (free (.type x))))
   Env
   (free [x] (set (map free (vals x))))
   Scheme
@@ -235,6 +242,6 @@
                     [s1 t1] (infer env cond)
                     [s2 t2] (infer env then)
                     [s3 t3] (infer env else)
-                    s4      (unify t1 (t/Const 'boolean?))
+                    s4      (unify t1 (t/Sum 'Bool []))
                     s5      (unify t2 t3)]
                 [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)])))

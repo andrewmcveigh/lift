@@ -29,7 +29,7 @@
   (symbol (str (namespace-munge *ns*) ".types." tagname)))
 
 (defmacro base
-  {:style/indent :defn}
+  {:style/indent [2 1]}
   [tagname & [fields? & extends]]
   (let [fields    (if (vector? fields?) fields? [])
         extends   (cond (vector? fields?) extends
@@ -46,18 +46,20 @@
                                  ())
                          (into {}))
                     {})
-        pred      (u/predicate-name tagname)]
+        pred      (u/predicate-name tagname)
+        gs        (gensym)]
     `(do
        (declare ~pred)
        (deftype* ~(symbol (name (ns-name *ns*)) (name tagname))
          ~classname
-         ~fields
+         ~(conj fields '___meta)
 
          :implements
          ~(vec
            (concat
             '[clojure.lang.IType
               clojure.lang.IHashEq
+              clojure.lang.IObj
               lift.type.type.Base
               lift.type.type.Show
               lift.type.type.Destructure]
@@ -80,6 +82,8 @@
           (clojure.lang.APersistentMap/mapHasheq
            ~(zipmap (map #(list 'quote %) fields) fields)))
 
+         (meta [_#] ~'___meta)
+         (withMeta [_# ~gs] (new ~tagname ~@fields ~gs))
          ~@(when (seq fields)
              `[(valAt
                 [_# k#]
@@ -101,7 +105,7 @@
 
          ~@(apply concat (vals (dissoc ex 'Show))))
 
-       (defn ~tagname ~fields (new ~classname ~@fields; 0 0
+       (defn ~tagname ~fields (new ~classname ~@fields nil; 0 0
                                    ))
        (defn ~pred [~'x]
          (instance? ~classname ~'x))
@@ -111,7 +115,7 @@
 
        ~classname)))
 
-(defn base? [x] (instance? Base x))
+(defn base? [x] (satisfies? Base x))
 
 (base Unit
   Show
@@ -144,6 +148,18 @@
       (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))
       (pr-str tag))))
 
+(base Constraint [tag vars]
+  Show
+  (show [_]
+    (if (seq vars)
+      (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))
+      (pr-str tag))))
+
+(base Constrained [constraint type]
+  Show
+  (show [_]
+    (format "%s => %s" (pr-str constraint) (pr-str type))))
+
 (defn curry-syntax [op [a b & tail]]
   (if (seq tail)
     (op a (curry-syntax op (cons b tail)))
@@ -156,6 +172,7 @@
 (def type-env (atom {}))
 (def expr-env (atom {}))
 
-;;; Type language parsers
-;;; TODO: this seems like it should go in a signatures namespace
-;;; Type language constructors
+(defn arglist [t]
+  (if-let [b (and (type-arrow? t) (.b t))]
+    (cons (.a t) (arglist b))
+    ()))

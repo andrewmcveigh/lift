@@ -33,13 +33,29 @@
           (when-let [ctor (cond (t/type-product? reg)
                                 (partial t/Product tag)
                                 (t/type-sum? reg)
-                                (partial t/Sum tag))]
+                                (partial t/Sum tag)
+                                (t/type-constraint? reg)
+                                (partial t/Constraint tag))]
             (let [args (map construct (:args x))]
               (ctor args))))
         (ex-unknown-type tag))))
 
+(defmethod construct :constrained [[_ {:keys [constraint sig]}]]
+  (t/Constrained
+   (construct [:parameterized (:constraint constraint)])
+   (construct sig)))
+
+(defmethod construct :non-constrained [[_ ast]]
+  (construct ast))
+
+(defmethod construct :sub-arrow [[_ ast]]
+  (construct ast))
+
+(defmethod construct :noparens [[_ ast]]
+  (construct [:arrow ast]))
+
 (defn type-signature [sig]
-  (let [spec (if (= (count sig) 1) ::spec/retype ::spec/type)
+  (let [spec (if (= (count sig) 1) ::spec/resig ::spec/sig)
         conformed (s/conform spec sig)]
     (if (s/invalid? conformed)
       (do
@@ -70,14 +86,18 @@
         arglist (vec (take (count (:args n)) u/vars))]
     `((def-value-cons '~tag
         (u/curry t/Arrow (concat (map construct '~(:args n)) [~type-cons])))
-      (t/base ~tag ~arglist))))
+      (t/base ~tag ~arglist)
+      (defn ~tag ~arglist
+        (new ~(t/base-classname tag) ~@arglist {:type ~type-cons})))))
 
 (defn value-cons [type [t n]]
   (case t
     :type-name `((def-value-cons '~n ~type)
                  (def ~n
-                   (reify t/Show
-                     (t/show [_#] ~(name n)))))
+                   (with-meta
+                     (reify t/Show
+                       (t/show [_#] ~(name n)))
+                     {:type ~type})))
     :parameterized (param-value-cons n type)))
 
 (defn sum-value-cons [node type-cons]

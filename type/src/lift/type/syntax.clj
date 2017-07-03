@@ -37,6 +37,9 @@
                 ::then ::expr
                 ::else ::expr)))
 
+(s/def ::quote
+  (s/and seq? (s/cat ::quot #{'quote} ::expr any?)))
+
 (s/def ::vector
   (s/coll-of ::expr :kind vector?))
 
@@ -45,8 +48,9 @@
         ::Var ::var
         ::Lam ::lambda
         ::Let ::let
-        ::App ::application
         ::If  ::if
+        ::Quo ::quote
+        ::App ::application
         ::Vec ::vector))
 
 (defn curry [op args]
@@ -68,6 +72,7 @@
     ::If  [::If [(normalize (::cond node))
                  (normalize (::then node))
                  (normalize (::else node))]]
+    ;; ::Quo
     ::Vec (curry [::Var 'VCons]
                  (conj (mapv normalize node) [::Var 'VNil]))))
 

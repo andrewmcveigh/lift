@@ -10,10 +10,14 @@
   (s/and simple-symbol? #(re-matches #"^[a-z\-]+$" (name %))))
 
 (s/def ::arrow-regex
-  (s/cat :type ::retype :more (s/+ (s/cat :_ #{'->} :type ::retype))))
+  (s/cat :type ::retype :more (s/+ (s/cat :-> #{'->} :type ::retype))))
+
+(s/def ::arrow-parens
+  (s/and seq? ::arrow-regex))
 
 (s/def ::arrow
-  (s/and seq? ::arrow-regex))
+  (s/alt :noparens ::arrow-regex
+         :parens   ::arrow-parens))
 
 (s/def ::parameterized-regex
   (s/cat :type-name ::type-name :args (s/+ ::type)))
@@ -22,18 +26,33 @@
   (s/alt :parens   (s/and seq? ::parameterized-regex)
          :noparens ::parameterized-regex))
 
+(s/def ::resubsig
+  (s/alt :sub-arrow ::arrow :retype ::retype))
+
+(s/def ::constrained
+  (s/cat :constraint (s/cat :constraint ::parameterized :=> #{'=>})
+         :sig ::resubsig))
+
+(s/def ::sig
+  (s/or :constrained ::constrained
+        :non-constrained ::type))
+
+(s/def ::resig
+  (s/alt :constrained ::constrained
+         :non-constrained ::retype))
+
 (s/def ::type
   (s/or :unit          ::unit
         :type-name     ::type-name
         :type-var      ::type-var
-        :arrow         ::arrow
+        :arrow         ::arrow-parens
         :parameterized ::parameterized))
 
 (s/def ::retype
   (s/alt :unit          ::unit
          :type-name     ::type-name
          :type-var      ::type-var
-         :arrow         ::arrow
+         :arrow         ::arrow-parens
          :parameterized ::parameterized))
 
 (s/def ::product
@@ -55,3 +74,12 @@
 
 (s/def ::data
   (s/or :product ::product :sum ::sum))
+
+(s/def ::class
+  (s/cat :class ::parameterized
+         :sigs  (s/+ (s/and seq? (s/cat :f simple-symbol? :sig ::resubsig)))
+         :impls (s/* (s/and seq?
+                            (s/cat :f simple-symbol?
+                                   :args (s/coll-of simple-symbol?
+                                                    :kind vector?)
+                                   :expr any?)))))
