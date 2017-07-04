@@ -1,5 +1,5 @@
 (ns lift.type.type
-  (:refer-clojure :exclude [destructure read type])
+  (:refer-clojure :exclude [destructure instance? read type])
   (:require
    [clojure.spec.alpha :as s]
    [clojure.string :as string]
@@ -69,7 +69,7 @@
 
          (equals
           [_# ~'other]
-          (and (instance? ~tagname ~'other)
+          (and (c/instance? ~tagname ~'other)
                ~@(map (fn [n] `(= (. ~'other ~(symbol (str \- n))) ~n))
                       fields)))
          (hasheq
@@ -108,7 +108,7 @@
        (defn ~tagname ~fields (new ~classname ~@fields nil; 0 0
                                    ))
        (defn ~pred [~'x]
-         (instance? ~classname ~'x))
+         (c/instance? ~classname ~'x))
 
        (defmethod print-method ~classname [~'x ~'writer]
          (.write ~'writer (show ~'x)))
@@ -176,3 +176,14 @@
   (if-let [b (and (type-arrow? t) (.b t))]
     (cons (.a t) (arglist b))
     ()))
+
+(defn instance? [instance]
+  (prn (map (fn [a]
+              [(map c/type (.vars a))
+               (map c/type (.vars instance))
+               (= (.vars a) (.vars instance))]
+              )
+            (get-in @type-env [(.tag instance) :instances])))
+  (-> @type-env
+      (get-in [(.tag instance) :instances])
+      (contains? instance)))

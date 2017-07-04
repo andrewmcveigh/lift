@@ -39,7 +39,7 @@
     (apply set/union (map free (.vars x))))
   Constrained
   (free [x]
-    (set/union (free (.constraint x)) (free (.type x))))
+    (free (.type x)))
   Env
   (free [x] (set (map free (vals x))))
   Scheme
@@ -63,6 +63,16 @@
   Sum
   (sub [x subst]
     (t/Sum (.tag x) (map #(sub % subst) (.vars x))))
+  Constraint
+  (sub [x subst]
+    (t/Constraint (.tag x) (mapv #(sub % subst) (.vars x))))
+  Constrained
+  (sub [x subst]
+    (let [constraint (.constraint x)
+          ctag (.tag constraint)
+          [cvar] (.vars constraint)]
+      (t/Constrained (t/Constraint ctag [(sub cvar subst)])
+                     (sub (.type x) subst))))
   Sub
   (sub [x subst]
     (f/map (fn [[term var :as s]]
@@ -105,6 +115,10 @@
 
 (defn ex-unbound-var [v]
   (throw (Exception. (format "UnboundVariable %s" (pr-str v)))))
+
+(defn ex-undeclared-instance [constraint]
+  (throw
+   (Exception. (format "There is no %s instance defined" (pr-str constraint)))))
 
 (defn bind [a t]
   (cond (= t (t/Var a)) sub/id
@@ -183,6 +197,18 @@
 (defmethod unify [Var Sum]
   [t1 t2]
   (bind (.v t1) t2))
+
+(defmethod unify [Constrained Arrow]
+  [t1 t2]
+  (let [subst (trampoline unify (.type t1) t2)
+        concrete (sub (.constraint t1) subst)]
+    (if (t/instance? concrete)
+      subst
+      (ex-undeclared-instance concrete))))
+
+(defmethod unify [Arrow Constrained]
+  [t1 t2]
+  (trampoline unify t2 t1))
 
 (defmethod unify :default [a b]
   (ex-cannot-unify a b))

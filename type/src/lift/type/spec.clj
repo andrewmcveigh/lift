@@ -75,11 +75,13 @@
 (s/def ::data
   (s/or :product ::product :sum ::sum))
 
+(s/def ::impl
+  (s/and seq?
+         (s/cat :f simple-symbol?
+                :args (s/coll-of simple-symbol? :kind vector?)
+                :expr any?)))
+
 (s/def ::class
   (s/cat :class ::parameterized
          :sigs  (s/+ (s/and seq? (s/cat :f simple-symbol? :sig ::resubsig)))
-         :impls (s/* (s/and seq?
-                            (s/cat :f simple-symbol?
-                                   :args (s/coll-of simple-symbol?
-                                                    :kind vector?)
-                                   :expr any?)))))
+         :impls (s/* ::impl)))
