@@ -167,8 +167,6 @@
 
 (defrecord Scheme [vars t])
 
-;;; How much of this belongs in here?
-
 (def type-env (atom {}))
 (def expr-env (atom {}))
 

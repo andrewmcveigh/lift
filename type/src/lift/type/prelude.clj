@@ -87,9 +87,26 @@
 (instance Ord Int
   (<= [x y] (if (c/<= x y) True False)))
 
+(instance Ord Double
+  (<= [x y] (if (c/<= x y) True False)))
+
 (instance Ord String
   (compare [x y]
     (let [z (c/compare x y)] (cond (zero? z) EQ (neg? z) LT :else GT))))
+
+(class Ord a => Num a
+  (+ a -> a -> a)
+  (- a -> a -> a)
+  (* a -> a -> a)
+
+  (+ [x y] (c/+ x y))
+  (- [x y] (c/- x y))
+  (* [x y] (c/* x y)))
+
+(instance Num Int)
+(instance Num Double)
+
+;; (check (+ 1.0 2.0))
 
 ;; (check (min "" 1))
 
@@ -98,5 +115,6 @@
 ;;; TODO:
 ;; (check (min 1 "")) ;=> Cannot unify Int and String
 ;; (check (min "" 1)) ;=> There is no Ord String instance defined
+;; ^^ maybe this is correct? It's a correct type error
 
 ;;; TODO: Constrained to Var unify

@@ -74,11 +74,10 @@
   (is (= (t/Sum 'List [(t/Const 'Int)])
          (type/check (map inc (Cons 1 Nil))))))
 
-;;; TODO: type class analogue
-;;; TODO: type constraints
 ;;; TODO: multi let sugar
 ;;; TODO: macroexpand
 ;;; TODO: boot watch plugin
+;;; TODO: fancy import of prelude
 
 ;;; TODO: Eq, Ord, Num, etc. typeclasses
 ;;; we already have protocols, which are not quite as good
@@ -87,6 +86,8 @@
 ;;; * type constraints
 ;;; class Num a where
 
+;;; TODO: auto gen `deriving` classes
+;;; TODO: casting between Num a types
 ;;; Num is odd because clojure uses java's subtyping for this
 ;;; But it could be beneficial for optimizing numeric code without boxing
 
@@ -94,24 +95,9 @@
 
 ;;; TODO: pattern matching `case` & `defn` macros
 ;;; TODO: exhaustiveness checking
-
-
-;; (instance Eq Nat)
-
-;;; conflation
-;;; type constraints
-;;; parametric polymorphism
-;;; ad-hoc polymorphism
-;;; subtype polymorphism
-
-;;; A thing is Eq if it has the functionality = or /=
-
+;;; TODO: Nat type
 
 ;;; TODO: consider automatic varargs of binops
-
-;; (syn/parse '(VCons 1 VNil))
-
-;; (type/check (fn [y] (VCons y VNil)))
 
 ;; (data Expr
 ;;   = Var String

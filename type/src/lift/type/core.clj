@@ -81,7 +81,8 @@
             (let [sig (parse/construct sig)
                   arglist (map vector (t/arglist sig) u/vars)]
               ;; TODO: ^^ is this always an arrow sig?
-              `((def ~f nil)
+              `((ns-unmap *ns* '~f)
+                (def ~f nil)
                 (defmulti
                   ~f
                   (fn ~(mapv second arglist)
@@ -114,15 +115,16 @@
            (assert (t/instance? constraint#)
                    (format "Instance did not meet precondition %s"
                            (pr-str constraint#)))))
-       ~@(mapv
-          (fn [{:keys [f args expr]}]
-            (let [f (u/resolve-sym f)
-                  constrained (:t (get @t/expr-env f))
-                  cvar (-> constrained .constraint t/free first)
-                  subst (sub/singleton cvar t)
-                  stype (sub/sub (.type constrained) subst)
-                  dispatch (->> stype (t/arglist) (mapv (fn [t] `(T ~t))))]
-              `(defmethod ~f ~dispatch ~args ~expr)))
-          conformed)
+       ~@(when-not (s/invalid? conformed)
+           (mapv
+            (fn [{:keys [f args expr]}]
+              (let [f (u/resolve-sym f)
+                    constrained (:t (get @t/expr-env f))
+                    cvar (-> constrained .constraint t/free first)
+                    subst (sub/singleton cvar t)
+                    stype (sub/sub (.type constrained) subst)
+                    dispatch (->> stype (t/arglist) (mapv (fn [t] `(T ~t))))]
+                `(defmethod ~f ~dispatch ~args ~expr)))
+            conformed))
        (declare-instance '~constraint ~inst-form)
        ~inst-form)))
