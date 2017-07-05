@@ -52,36 +52,43 @@
       (let [[t n] (syn/parse x)]
         (when (= ::syn/Lit t) (t/Const n)))))
 
+(c/defn constraint-form [[_ {:keys [type-name args]}]]
+  `(->> '~args
+        (map parse/construct)
+        (t/Constraint '~type-name)))
+
 (defmacro class
   {:style/indent [:defn :defn]}
   [& decl]
-  (let [{:keys [class sigs impls]} (s/conform ::spec/class decl)
-        class (second class)
-        t (:type-name class)
-        constrained (map parse/construct (:args class))
-        constraint  (t/Constraint t constrained)
-        constraint' `(->> '~(:args class)
-                          (map parse/construct)
-                          (t/Constraint '~t))]
+  (let [{:keys [pre class sigs impls]} (s/conform ::spec/class decl)
+        class' (second class)
+        t (:type-name class')
+        constrained (map parse/construct (:args class'))
+        constraint (t/Constraint t constrained)
+        constraint' (constraint-form class)
+        precondition (constraint-form (:constraint pre))]
     `(do
-       (swap! t/type-env assoc '~t {:constraint ~constraint'})
+       (swap! t/type-env assoc '~t {:constraint ~constraint'
+                                    :precondition ~precondition})
        ~@(map
           (fn [{:keys [f sig]}]
             (let [f (u/ns-qualify f)
-                  sig `(t/Constrained ~constraint'(parse/construct '~sig))]
+                  sig `(t/Constrained ~constraint' (parse/construct '~sig))]
               `(swap! t/expr-env assoc '~f (t/->Scheme (t/free ~sig) ~sig))))
           sigs)
-       ~@(map (fn [{:keys [f sig]}]
-                (let [sig (parse/construct sig)
-                      arglist (map vector (t/arglist sig) u/vars)]
-                  ;; TODO: ^^ is this always an arrow sig?
-                  `(defmulti
-                     ~f
-                     (fn ~(mapv second arglist)
-                       ~(->> arglist
-                             (filter (comp #{(first constrained)} first))
-                             (mapv (fn [[_ x]] `(type ~x))))))))
-              sigs)
+       ~@(mapcat
+          (fn [{:keys [f sig]}]
+            (let [sig (parse/construct sig)
+                  arglist (map vector (t/arglist sig) u/vars)]
+              ;; TODO: ^^ is this always an arrow sig?
+              `((def ~f nil)
+                (defmulti
+                  ~f
+                  (fn ~(mapv second arglist)
+                    ~(->> arglist
+                          (filter (comp #{(first constrained)} first))
+                          (mapv (fn [[_ x]] `(type ~x)))))))))
+          sigs)
        ~@(map (fn [{:keys [f args expr]}]
                 `(defmethod ~f :default ~args ~expr))
               ;; TODO: ^^ needs type checking
@@ -99,8 +106,14 @@
   {:style/indent [2 1]}
   [constraint t & decl]
   (let [conformed (s/conform (s/coll-of ::spec/impl) decl)
-        inst-form `(t/Constraint '~constraint [(T ~t)])]
+        inst-form `(t/Constraint '~constraint [(T ~t)])
+        classmeta (get @t/type-env constraint)]
     `(do
+       (when-let [pre# '~(.tag (:precondition classmeta))]
+         (let [constraint# (t/Constraint pre# [(T ~t)])]
+           (assert (t/instance? constraint#)
+                   (format "Instance did not meet precondition %s"
+                           (pr-str constraint#)))))
        ~@(mapv
           (fn [{:keys [f args expr]}]
             (let [f (u/resolve-sym f)

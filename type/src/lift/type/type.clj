@@ -178,12 +178,6 @@
     ()))
 
 (defn instance? [instance]
-  (prn (map (fn [a]
-              [(map c/type (.vars a))
-               (map c/type (.vars instance))
-               (= (.vars a) (.vars instance))]
-              )
-            (get-in @type-env [(.tag instance) :instances])))
   (-> @type-env
       (get-in [(.tag instance) :instances])
       (contains? instance)))

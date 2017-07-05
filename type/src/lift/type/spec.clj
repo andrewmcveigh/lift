@@ -29,9 +29,11 @@
 (s/def ::resubsig
   (s/alt :sub-arrow ::arrow :retype ::retype))
 
+(s/def ::constraint
+  (s/cat :constraint ::parameterized :=> #{'=>}))
+
 (s/def ::constrained
-  (s/cat :constraint (s/cat :constraint ::parameterized :=> #{'=>})
-         :sig ::resubsig))
+  (s/cat :constraint ::constraint :sig ::resubsig))
 
 (s/def ::sig
   (s/or :constrained ::constrained
@@ -82,6 +84,7 @@
                 :expr any?)))
 
 (s/def ::class
-  (s/cat :class ::parameterized
+  (s/cat :pre   (s/? ::constraint)
+         :class ::parameterized
          :sigs  (s/+ (s/and seq? (s/cat :f simple-symbol? :sig ::resubsig)))
          :impls (s/* ::impl)))

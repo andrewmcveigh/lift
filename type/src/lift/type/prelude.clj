@@ -1,5 +1,5 @@
 (ns lift.type.prelude
-  (:refer-clojure :exclude [= class not])
+  (:refer-clojure :exclude [= class defn not not=])
   (:require
    [lift.type.core :refer [check class const data defn instance tdef T]]
    [lift.type.util :as u]
@@ -61,50 +61,42 @@
 
 (data Ordering = LT | EQ | GT)
 
+(instance Eq Ordering
+  (= [x y] (if (c/= x y) True False)))
+
+(instance Eq String
+  (= [x y] (if (c/= x y) True False)))
+
 (class Eq a => Ord a
-
   (compare a -> a -> Ordering)
+  (<       a -> a -> Bool)
+  (<=      a -> a -> Bool)
+  (>       a -> a -> Bool)
+  (>=      a -> a -> Bool)
+  (max     a -> a -> a)
+  (min     a -> a -> a)
+
+  (compare [x y] (cond (c/= x y) EQ (c/<= x y) LT :else GT))
+  (<       [x y] (= LT (compare x y)))
+  (<=      [x y] (not= GT (compare x y)))
+  (>       [x y] (= GT (compare x y)))
+  (>=      [x y] (not= LT (compare x y)))
+  (max     [x y] (if (<= x y) y x))
+  (min     [x y] (if (<= x y) x y)))
+
+(instance Ord Int
+  (<= [x y] (if (c/<= x y) True False)))
+
+(instance Ord String
   (compare [x y]
-    (cond (= x y)  EQ
-          (<= x y) LT
-          :else    GT))
+    (let [z (c/compare x y)] (cond (zero? z) EQ (neg? z) LT :else GT))))
 
-  (< a -> a -> Bool)
-  (< [x y] (= LT (compare x y)))
+;; (check (min "" 1))
 
-  (<= a -> a -> Bool)
-  (<= [x y] (not= GT (compare x y)))
+;; (c/compare "bb" "d")
 
-  (> a -> a -> Bool)
-  (> [x y] (= GT (compare x y)))
+;;; TODO:
+;; (check (min 1 "")) ;=> Cannot unify Int and String
+;; (check (min "" 1)) ;=> There is no Ord String instance defined
 
-  (>= a -> a -> Bool)
-  (>= [x y] (not= LT (compare x y)))
-
-  (max a -> a -> a)
-  (max [x y] (if (<= x y) y x))
-
-  (min a -> a -> a)
-  (min [x y] (if (<= x y) x y)))
-
-;;; TODO: Constrained constraints
-
-;; (methods =)
-;; => {[Int Int] #function[lift.type.prelude/eval24741/fn--24742]}
-
-;; (keys @lift.type.type/expr-env)
-
-;; (reset! lift.type.type/expr-env {})
-
-;; (check (= 1 2))
-
-;;; what does it mean to unify a constrained type?
-;;; * the constraints must match
-;;;   - if Eq a => a then any attempt to unify, there must be an instance of Eq
-;;;     for a
-;;; which should be easy enough, but there are a couple of trick parts.
-;;; * can we check if this instance exists?
-
-;;; (instance Eq Int
-;;;   (= [x y] (c/= x y)))
-;;;=> (defmethod = [Int Int] [x y] (c/= x y))
+;;; TODO: Constrained to Var unify
