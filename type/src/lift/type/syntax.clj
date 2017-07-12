@@ -4,13 +4,18 @@
 
 (def lits (atom {}))
 
-(defmacro deflit [type parser]
+(defmacro def-literal [type parser]
   (let [litmap (assoc @lits (keyword (name type)) [parser type])
         ormap  (map (fn [[k [s]]] [k s]) litmap)]
     `(do
        (reset! lits '~litmap)
-       (s/def :lift.type.syntax/literal
+       (s/def ::literal
          (s/or ~@(apply concat ormap))))))
+
+(def-literal Char   char?)
+(def-literal Int    integer?)
+(def-literal Double double?)
+(def-literal String string?)
 
 (s/def ::var symbol?)
 
@@ -21,8 +26,7 @@
                 ::expr ::expr)))
 
 (s/def ::application
-  (s/and seq?
-         (s/cat ::op ::expr ::args (s/* ::expr))))
+  (s/and seq? (s/cat ::op ::expr ::args (s/+ ::expr))))
 
 (s/def ::let
   (s/and seq?
@@ -38,10 +42,23 @@
                 ::else ::expr)))
 
 (s/def ::quote
-  (s/and seq? (s/cat ::quot #{'quote} ::expr any?)))
+  (s/and seq? (s/cat ::quot #{'quote} ::expr ::quoted)))
 
 (s/def ::vector
   (s/coll-of ::expr :kind vector?))
+
+(s/def ::seq
+  (s/coll-of ::expr :kind seq?))
+
+(s/def ::quoted
+  (s/or ::Lit ::literal
+        ::Var ::var
+        ::Lam ::lambda
+        ::Let ::let
+        ::If  ::if
+        ::Quo ::quote
+        ::Seq ::seq
+        ::Vec ::vector))
 
 (s/def ::expr
   (s/or ::Lit ::literal
@@ -72,10 +89,21 @@
     ::If  [::If [(normalize (::cond node))
                  (normalize (::then node))
                  (normalize (::else node))]]
-    ;; ::Quo
+    ::Quo [::Quo (normalize (::expr node))]
+    ::Seq (curry [::Var 'Cons]
+                 (conj (mapv normalize node) [::Var 'Nil]))
     ::Vec (curry [::Var 'VCons]
                  (conj (mapv normalize node) [::Var 'VNil]))))
 
+;; what does quote mean?
+;; it means that the var type should not be looked up,
+;; and expressions should not be evaluated
+;; What about collection syntax expansion under quote?
+;; Maybe it's better to build typed datastructures, so that we can be clear
+;; where is syntax and where is ... how?
+;; Maybe it's better to start dogfooding Expr anyway? Maybe more interesting?
+
+;;; TODO: How to varargs
 (defn parse [expr]
   (let [ast (s/conform ::expr expr)]
     (if (s/invalid? ast)
@@ -83,5 +111,3 @@
         (s/explain ::expr expr)
         (throw (Exception. "Invalid Syntax")))
       (normalize ast))))
-
-;;; TODO: How to varargs

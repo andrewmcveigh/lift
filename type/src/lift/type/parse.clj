@@ -16,6 +16,9 @@
 (defmethod construct :unit  [[_ _]] (t/Unit))
 
 (defmethod construct :type-name [[_ ast]]
+  ;; TODO: when the parameter type is a value constructor, then a lookup in the
+  ;; type env will not return.
+  ;;
   (or (@t/type-env ast)
       (ex-unknown-type ast)))
 
@@ -92,7 +95,8 @@
 
 (defn value-cons [type [t n]]
   (case t
-    :type-name `((def-value-cons '~n ~type)
+    :type-name `((ns-unmap *ns* '~n)
+                 (def-value-cons '~n ~type)
                  (def ~n
                    (with-meta
                      (reify t/Show
@@ -104,6 +108,17 @@
   (let [{:keys [type more]} (:sum-cons node)
         type-constructors (cons type (map :type more))]
     (mapcat (partial value-cons type-cons) type-constructors)))
+
+(defn record-value-cons [n type-cons]
+  (let [tag (:type-name n)
+        arglist (mapv (comp symbol name) (keys (:recmap n)))]
+    `((def-value-cons '~tag
+        (->> [~type-cons]
+             (concat (map construct '~(vals (:recmap n))))
+             (u/curry t/Arrow)))
+      (t/base ~tag ~arglist)
+      (defn ~tag ~arglist
+        (new ~(t/base-classname tag) ~@arglist {:type ~type-cons})))))
 
 (defn data-cons [[t n]]
   (case t
@@ -118,6 +133,12 @@
       (concat
        `(do (def-type-cons ~type-cons))
        (sum-value-cons n type-cons)
+       [type-cons]))
+    :record
+    (let [type-cons (type-cons `t/Record n)]
+      (concat
+       `(do (def-type-cons ~type-cons))
+       (record-value-cons (:rec-cons n) type-cons)
        [type-cons]))))
 
 (defn data [decl]

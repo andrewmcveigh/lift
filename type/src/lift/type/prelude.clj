@@ -1,6 +1,7 @@
 (ns lift.type.prelude
   (:refer-clojure :exclude [= class defn not not=])
   (:require
+   [lift.p.pattern :as p]
    [lift.type.core :refer [check class const data defn instance tdef T]]
    [lift.type.util :as u]
    [lift.type.type :as t]
@@ -10,6 +11,7 @@
 
 (const Char char?)
 (const Int integer?)
+(const Nat nat-int?)
 (const Double double?)
 (const String string?)
 
@@ -38,9 +40,6 @@
 
 (tdef map (a -> b) -> (List a) -> (List b))
 
-;; (tdef quote a -> a)
-;; TODO: ^^
-
 (tdef not Bool -> Bool)
 (c/defn not [x] (if (c/= x True) False True))
 
@@ -56,8 +55,6 @@
 
 (instance Eq Double
   (= [x y] (if (c/= x y) True False)))
-
-;; (check (= 1.0 0.3))
 
 (data Ordering = LT | EQ | GT)
 
@@ -106,15 +103,58 @@
 (instance Num Int)
 (instance Num Double)
 
-;; (check (+ 1.0 2.0))
+;; (p/case True
+;;   True 1
+;;   False 0)
 
-;; (check (min "" 1))
+(data Symbol = Symbol String)
 
-;; (c/compare "bb" "d")
+(data Expr
+  = Var Symbol
+  | App Expr Expr
+  | Lam Symbol Expr
+  | Let Symbol Expr Expr
+  | Lit Lit
+  | If Expr Expr Expr)
 
-;;; TODO:
-;; (check (min 1 "")) ;=> Cannot unify Int and String
-;; (check (min "" 1)) ;=> There is no Ord String instance defined
-;; ^^ maybe this is correct? It's a correct type error
+;; (check '(if a ))
 
-;;; TODO: Constrained to Var unify
+;; (check [1 2 3])
+
+;; (tdef def Symbol -> Expr)
+;; TODO: special forms need to have special syntax parser/rules
+;; TODO: macros receive Exprs
+;; TODO: type checker/system macros?
+
+;; (tdef quote a -> a)
+;; TODO: ^^ quote is a reader macro/special form
+;; TODO: extensible parser/rules
+
+;; (check (def x 1))
+
+;; (check (Lam (Symbol "a")
+;;             (App (Var (Symbol "+"))
+;;                  (Lit (LInt 1)))))
+
+;; (check (Lit (LInt 1)))
+
+;; (data Point = Point {:x Int :y Int})
+;; TODO: records^^
+
+;; [:record
+;;  {:type-cons [:lit-type-cons Point],
+;;   := =,
+;;   :rec-cons
+;;   {:type-name Point,
+;;    :recmap
+;;    {:x
+;;     [:parameterized
+;;      [:noparens {:type-name Just, :args [[:type-var a]]}]],
+;;     :y [:type-name Int]}}}]
+
+;; 2 versions of the constructor, one accepting a map, one accepting 2 args
+;; 2 ways of destructuring
+;; The problem is that map syntax ordering is weak
+;; (data Point = Point Int Int)
+
+;;; hash-map/array-map reading could be hacked

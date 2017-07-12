@@ -148,6 +148,13 @@
       (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))
       (pr-str tag))))
 
+(base Record [tag vars]
+  Show
+  (show [_]
+    (if (seq vars)
+      (format "%s %s" (pr-str tag) (string/join " " (map pr-str vars)))
+      (pr-str tag))))
+
 (base Constraint [tag vars]
   Show
   (show [_]

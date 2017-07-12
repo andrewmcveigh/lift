@@ -23,10 +23,20 @@
   [& decl]
   (parse/data-cons (parse/data decl)))
 
+(defmacro deflit [type parser]
+  (let [litmap (assoc @syn/lits (keyword (name type)) [parser type])
+        ormap  (map (fn [[k [s]]] [k s]) litmap)
+        summap (map (fn [[_ [_ t]]] [(symbol (str \L (name t))) t]) litmap)]
+    `(do
+       (reset! syn/lits '~litmap)
+       (s/def ::syn/literal
+         (s/or ~@(apply concat ormap)))
+       (data ~'Lit ~'= ~@(apply concat (interpose '[|] summap))))))
+
 (c/defn -check [expr]
   (->> expr
        (syn/parse)
-       (check/infer (check/map->Env @t/expr-env))
+       (check/infer {:ctx (check/map->Env @t/expr-env)})
        (second)))
 
 (defmacro check [expr]
@@ -44,7 +54,7 @@
 (defmacro const [name parser]
   `(let [t# (t/Const '~name)]
      (swap! t/type-env assoc '~name t#)
-     (syn/deflit ~name ~parser)
+     (deflit ~name ~parser)
      t#))
 
 (c/defn type [x]

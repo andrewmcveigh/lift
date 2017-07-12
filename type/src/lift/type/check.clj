@@ -233,41 +233,55 @@
 (defn generalize [env t]
   (Scheme. (set/difference (free t) (free env)) t))
 
-(defn infer [env [syn-type expr]]
-  (case syn-type
+(defmulti infer (fn [env [syn-type expr]] syn-type))
 
-    ::syn/Lit [sub/id (t/Const expr)]
+(defmethod infer ::syn/Lit [_ [_ expr]]
+  [sub/id (t/Const expr)])
 
-    ::syn/Var (if-let [s (or (get env expr)
-                             (get env (u/resolve-sym expr)))]
-                [sub/id (instantiate s)]
-                (ex-unbound-var expr))
+(defmethod infer ::syn/Var [{:keys [quoted? ctx]} [_ expr]]
+  (if quoted?
+    [sub/id (t/Const 'Symbol)]
+    (if-let [s (or (get ctx expr)
+                   (get ctx (u/resolve-sym expr)))]
+     [sub/id (instantiate s)]
+     (ex-unbound-var expr))))
 
-    ::syn/Lam (let [[x e]   expr
-                    tv      (fresh)
-                    env'    (assoc env x (Scheme. [] tv))
-                    [s1 t1] (infer env' e)]
-                [s1 (sub (t/Arrow tv t1) s1)])
+(defmethod infer ::syn/Lam [env [_ expr]]
+  (let [[x e]   expr
+        tv      (fresh)
+        [s1 t1] (-> env
+                    (assoc-in [:ctx x] (Scheme. [] tv))
+                    (infer e))]
+    [s1 (sub (t/Arrow tv t1) s1)]))
 
-    ::syn/App (let [[e1 e2] expr
-                    tv      (fresh)
-                    [s1 t1] (infer env e1)
-                    [s2 t2] (infer (sub env s1) e2)
-                    s3      (unify (sub t1 s2)
-                                   (t/Arrow t2 tv))]
-                [(sub/compose s3 s2 s1) (sub tv s3)])
+(defmethod infer ::syn/App [env [_ expr]]
+  (let [[e1 e2] expr
+        tv      (fresh)
+        [s1 t1] (infer env e1)
+        [s2 t2] (infer (update env :ctx sub s1) e2)
+        s3      (unify (sub t1 s2)
+                       (t/Arrow t2 tv))]
+    [(sub/compose s3 s2 s1) (sub tv s3)]))
 
-    ::syn/Let (let [[x e1 e2] expr
-                    [s1 t1]   (infer env e1)
-                    env'      (sub env s1)
-                    t         (generalize env' t1)
-                    [s2 t2]   (infer (assoc env' x t) e2)]
-                [(sub/compose s1 s2) t2])
+(defmethod infer ::syn/Let [{:keys [env]} [_ expr]]
+  (let [[x e1 e2] expr
+        [s1 t1]   (infer env e1)
+        env'      (update env :ctx sub s1)
+        t         (generalize (:ctx env') t1)
+        [s2 t2]   (infer (assoc-in env' [:ctx x] t) e2)]
+    [(sub/compose s1 s2) t2]))
 
-    ::syn/If  (let [[cond then else] expr
-                    [s1 t1] (infer env cond)
-                    [s2 t2] (infer env then)
-                    [s3 t3] (infer env else)
-                    s4      (unify t1 (t/Sum 'Bool []))
-                    s5      (unify t2 t3)]
-                [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)])))
+(defmethod infer ::syn/If [env [_ expr]]
+  (let [[cond then else] expr
+        [s1 t1] (infer env cond)
+        [s2 t2] (infer env then)
+        [s3 t3] (infer env else)
+        s4      (unify t1 (t/Sum 'Bool []))
+        s5      (unify t2 t3)]
+    [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)]))
+
+(defmethod infer ::syn/Quo [env [_ expr]]
+  (prn env expr)
+  (let [quoted? (:quoted? env)
+        env'    (assoc env :quoted? true)]
+    (infer env' expr)))

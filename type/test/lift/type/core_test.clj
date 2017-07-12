@@ -74,57 +74,36 @@
   (is (= (t/Sum 'List [(t/Const 'Int)])
          (type/check (map inc (Cons 1 Nil))))))
 
+apply
+
 ;;; TODO: multi let sugar
 ;;; TODO: macroexpand
 ;;; TODO: boot watch plugin
 ;;; TODO: fancy import of prelude
-
-;;; TODO: Eq, Ord, Num, etc. typeclasses
-;;; we already have protocols, which are not quite as good
-;;; So, a better than protocol polymorphic dispatch, I.E.,
-;;; * fmap f *F*
-;;; * type constraints
-;;; class Num a where
-
+;;; TODO: type checking stack errors
 ;;; TODO: auto gen `deriving` classes
 ;;; TODO: casting between Num a types
-;;; Num is odd because clojure uses java's subtyping for this
-;;; But it could be beneficial for optimizing numeric code without boxing
-
-;;; Ord ... < <= > >= for non-numerics?
-
 ;;; TODO: pattern matching `case` & `defn` macros
 ;;; TODO: exhaustiveness checking
-;;; TODO: Nat type
-
+;;; TODO: Nat type - what is a Nat?
 ;;; TODO: consider automatic varargs of binops
+;;; TODO: what to do with macros?
+;;; TODO: Constrained to Var unification rule
 
-;; (data Expr
-;;   = Var String
-;;   | App Expr Expr
-;;   | Lam Var Expr
-;;   | Let Var Expr Expr
-;;   | Lit Lit
-;;   | If Expr Expr Expr)
-;;; TODO: ^^ this "correctly" b0rks on 'Var not being a type - should it?
-;;; is Var a type here? as part of a sum?
-;;; Should it also lookup in value constructors?
+;;; TODO: `case`
+;;; How to do this? It's a syntax extension. The easiest thing would be to treat
+;;; it as if it's a syntax form.
+;;; But... it's a macro. If we can add macros typing to the type system, that's
+;;; going to be super cool.
+;;; You'd also need to add pattern matching to the type system, how?
 
+;;; TODO: WTF is a boundary!?
+;;; How do we keep clojure from calling into this code, with garbage values?
+;;; Have functions not be callable? - then functions would have to be something
+;;; else... interesting...
+;;; Clojure can call anything in java. But we don't have to make it easy.
+;;; Separate namespace things, clojure doesn't have _easy_ access to
+;;; Non-callable from clojure things
+;;; You'd need some intermediate interpreter - slow!
 
-;; (tdef defn Symbol -> (Vector Symbol) -> Expr -> Expr)
-;; (type/check (defn dec [i] (- i 1)))
-;; (macroexpand '(defn dec [i] (- i 1)))
-
-;; (meta #'defn)
-
-;;; what to do with macros?
-
-;; (alter-var-root
-;;  #'eval (fn [_]
-;;           (fn [form]
-;;             ;; (check/infer
-;;             ;;  (check/map->Env (deref expr-env))
-;;             ;;  (syn/parse form))
-;;             (. clojure.lang.Compiler (eval form)))))
-
-;; (dec 1)
+;; #lift/lang typed

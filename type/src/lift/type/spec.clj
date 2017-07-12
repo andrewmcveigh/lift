@@ -74,8 +74,14 @@
 (s/def ::sum
   (s/cat :type-cons ::type-cons := #{'=} :sum-cons ::sum-cons))
 
+(s/def ::rec-cons
+  (s/cat :type-name ::type-name :recmap (s/map-of keyword? ::type)))
+
+(s/def ::record
+  (s/cat :type-cons ::type-cons := #{'=} :rec-cons ::rec-cons))
+
 (s/def ::data
-  (s/or :product ::product :sum ::sum))
+  (s/or :product ::product :sum ::sum :record ::record))
 
 (s/def ::impl
   (s/and seq?
