@@ -3,7 +3,9 @@
   (:require
    [clojure.spec.alpha :as s]
    [clojure.string :as string]
-   [lift.type.util :as u]))
+   [lift.f.functor :as f :refer [Functor]]
+   [lift.type.util :as u]
+   [clojure.set :as set]))
 
 (alias 'c 'clojure.core)
 
@@ -99,7 +101,7 @@
          ~@(or (get ex 'Show)
               `[(lift.shorthand/show
                  [_]
-                 (format "%s %s" ~(pr-str tagname) (apply pr-str ~fields)))])
+                 (format "(%s %s)" ~(pr-str tagname) (apply pr-str ~fields)))])
 
          (destructure [_#] ~fields)
 
@@ -174,6 +176,11 @@
 
 (defrecord Scheme [vars t])
 
+(defrecord Env []
+  Functor
+  (-map [x f]
+    (map->Env (f/map f (into {} x)))))
+
 (def type-env (atom {}))
 (def expr-env (atom {}))
 
@@ -186,3 +193,31 @@
   (-> @type-env
       (get-in [(.tag instance) :instances])
       (contains? instance)))
+
+(extend-protocol Free
+  lift.type.type.types.Unit
+  (free [_] #{})
+  lift.type.type.types.Const
+  (free [_] #{})
+  lift.type.type.types.Var
+  (free [x] #{(.v x)})
+  lift.type.type.types.Arrow
+  (free [x]
+    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
+  lift.type.type.types.Product
+  (free [x]
+    (apply set/union (map free (.vars x))))
+  lift.type.type.types.Sum
+  (free [x]
+    (apply set/union (map free (.vars x))))
+  lift.type.type.types.Constraint
+  (free [x]
+    (apply set/union (map free (.vars x))))
+  lift.type.type.types.Constrained
+  (free [x]
+    (free (.type x)))
+  Env
+  (free [x] (set (map free (vals x))))
+  Scheme
+  (free [{:keys [t vars]}]
+    (set/difference (free t) (set vars))))

@@ -141,10 +141,15 @@
        (record-value-cons (:rec-cons n) type-cons)
        [type-cons]))))
 
-(defn data [decl]
+(defn data* [decl]
   (let [ast (s/conform ::spec/data decl)]
     (if (s/invalid? ast)
       (do
         (s/explain ::spec/data decl)
         (throw (Exception. "Invalid Syntax")))
       ast)))
+
+(defmacro data
+  {:style/indent :defn}
+  [& decl]
+  (data-cons (data* decl)))

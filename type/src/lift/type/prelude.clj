@@ -117,11 +117,20 @@
   | Lit Lit
   | If Expr Expr Expr)
 
-;; (check '(if a ))
+(check '(if True 1 2))
 
-;; (check [1 2 3])
+(check '(1 2 3))
 
-;; (tdef def Symbol -> Expr)
+(tdef def Expr -> Expr)
+
+
+(syn/parse '(def x 1))
+
+;; Should syntax know about special forms? My first thoughts are no, but then
+;; should syntax be re-parsed when there's a macro?
+;; should syntax be first parsed into seqs? - probably, that's more like how
+;; lisps work
+
 ;; TODO: special forms need to have special syntax parser/rules
 ;; TODO: macros receive Exprs
 ;; TODO: type checker/system macros?
@@ -130,7 +139,6 @@
 ;; TODO: ^^ quote is a reader macro/special form
 ;; TODO: extensible parser/rules
 
-;; (check (def x 1))
 
 ;; (check (Lam (Symbol "a")
 ;;             (App (Var (Symbol "+"))

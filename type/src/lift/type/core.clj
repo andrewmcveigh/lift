@@ -21,7 +21,7 @@
 (defmacro data
   {:style/indent :defn}
   [& decl]
-  (parse/data-cons (parse/data decl)))
+  `(parse/data ~@decl))
 
 (defmacro deflit [type parser]
   (let [litmap (assoc @syn/lits (keyword (name type)) [parser type])
@@ -36,7 +36,7 @@
 (c/defn -check [expr]
   (->> expr
        (syn/parse)
-       (check/infer {:ctx (check/map->Env @t/expr-env)})
+       (check/infer {:ctx (t/map->Env @t/expr-env)})
        (second)))
 
 (defmacro check [expr]

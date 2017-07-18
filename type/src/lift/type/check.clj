@@ -9,83 +9,10 @@
    [lift.type.util :as u])
   (:import
    [lift.type.substitution Sub]
-   [lift.type.type Scheme]
+   [lift.type.syntax.types Lit Seq Sym Lam Let If Quo App]
+   [lift.type.type Env Scheme]
    [lift.type.type.types
     Unit Const Var Arrow Product Sum Constraint Constrained]))
-
-(defrecord Env []
-  Functor
-  (-map [x f]
-    (map->Env (f/map f (into {} x)))))
-
-(extend-protocol Free
-  Unit
-  (free [_] #{})
-  Const
-  (free [_] #{})
-  Var
-  (free [x] #{(.v x)})
-  Arrow
-  (free [x]
-    (set/union (or (some-> (.a x) free) #{}) (or (some-> (.b x) free) #{})))
-  Product
-  (free [x]
-    (apply set/union (map free (.vars x))))
-  Sum
-  (free [x]
-    (apply set/union (map free (.vars x))))
-  Constraint
-  (free [x]
-    (apply set/union (map free (.vars x))))
-  Constrained
-  (free [x]
-    (free (.type x)))
-  Env
-  (free [x] (set (map free (vals x))))
-  Scheme
-  (free [{:keys [t vars]}]
-    (set/difference (free t) (set vars))))
-
-(extend-protocol Substitutable
-  Unit
-  (sub [x _] x)
-  Const
-  (sub [x _] x)
-  Var
-  (sub [x subst]
-    (get subst (.v x) x))
-  Arrow
-  (sub [x subst]
-    (t/Arrow (sub (.a x) subst) (sub (.b x) subst)))
-  Product
-  (sub [x subst]
-    (t/Product (.tag x) (map #(sub % subst) (.vars x))))
-  Sum
-  (sub [x subst]
-    (t/Sum (.tag x) (map #(sub % subst) (.vars x))))
-  Constraint
-  (sub [x subst]
-    (t/Constraint (.tag x) (mapv #(sub % subst) (.vars x))))
-  Constrained
-  (sub [x subst]
-    (let [constraint (.constraint x)
-          ctag (.tag constraint)
-          [cvar] (.vars constraint)]
-      (t/Constrained (t/Constraint ctag [(sub cvar subst)])
-                     (sub (.type x) subst))))
-  Sub
-  (sub [x subst]
-    (f/map (fn [[term var :as s]]
-             (if (empty? s)
-               []
-               [(sub term subst) var]))
-           x))
-  Env
-  (sub [x subst]
-    (f/map #(sub % subst) x))
-  Scheme
-  (sub [{:keys [vars t] :as x} subst]
-    (update x :t sub (apply dissoc subst vars))))
 
 (defn occurs?
   "A variable `x` occurs in `term` if and only if `t = f(s[1],...s[n])` for
@@ -125,7 +52,7 @@
         (occurs? a t)   (ex-infitite-type a t)
         :otherwise      (sub/singleton a t)))
 
-(defn unify-seq [t1 t2]
+(defn unify-tuples [t1 t2]
   (let [ts1 (.vars t1)
         ts2 (.vars t2)]
     (if (= (count ts1) (count ts2))
@@ -137,6 +64,16 @@
                 s2 (trampoline unify t1 t2)]
             (recur (sub/compose s2 s1) t1s t2s))))
       (ex-arity t1 t2))))
+
+(defn unify-seq [seq-term]
+  (loop [s1 sub/id
+         [t1 t2 & ts] seq-term]
+    (if (and t1 t2)
+      (let [s2 (trampoline unify t1 t2)
+            t3 (sub/sub t1 s2)]
+        (recur (sub/compose s2 s1) (cons t3 ts)))
+      s1)))
+;; TODO: does this work?
 
 (defn unify-pair [t1 t2]
   (if (= t1 t2)
@@ -176,7 +113,7 @@
 
 (defmethod unify [Product Product]
   [t1 t2]
-  (unify-seq t1 t2))
+  (unify-tuples t1 t2))
 
 (defmethod unify [Product Var]
   [t1 t2]
@@ -188,7 +125,7 @@
 
 (defmethod unify [Sum Sum]
   [t1 t2]
-  (unify-seq t1 t2))
+  (unify-tuples t1 t2))
 
 (defmethod unify [Sum Var]
   [t1 t2]
@@ -233,29 +170,31 @@
 (defn generalize [env t]
   (Scheme. (set/difference (free t) (free env)) t))
 
-(defmulti infer (fn [env [syn-type expr]] syn-type))
+(defmulti infer (fn [_ expr] (class expr)))
 
-(defmethod infer ::syn/Lit [_ [_ expr]]
-  [sub/id (t/Const expr)])
-
-(defmethod infer ::syn/Var [{:keys [quoted? ctx]} [_ expr]]
+(defmethod infer Lit [{:keys [quoted?]} expr]
   (if quoted?
-    [sub/id (t/Const 'Symbol)]
-    (if-let [s (or (get ctx expr)
-                   (get ctx (u/resolve-sym expr)))]
-     [sub/id (instantiate s)]
-     (ex-unbound-var expr))))
+    [sub/id (t/Sum 'Expr [])]
+    [sub/id (t/Const (.-a expr))]))
 
-(defmethod infer ::syn/Lam [env [_ expr]]
-  (let [[x e]   expr
+(defmethod infer Sym [{:keys [quoted? ctx]} expr]
+  (if quoted?
+    [sub/id (t/Sum 'Expr [])]
+    (if-let [s (or (get ctx expr)
+                   (get ctx (u/resolve-sym (.-a expr))))]
+      [sub/id (instantiate s)]
+      (ex-unbound-var expr))))
+
+(defmethod infer Lam [env expr]
+  (let [[x e]   (t/destructure expr)
         tv      (fresh)
         [s1 t1] (-> env
                     (assoc-in [:ctx x] (Scheme. [] tv))
                     (infer e))]
     [s1 (sub (t/Arrow tv t1) s1)]))
 
-(defmethod infer ::syn/App [env [_ expr]]
-  (let [[e1 e2] expr
+(defmethod infer App [env expr]
+  (let [[e1 e2] (t/destructure expr)
         tv      (fresh)
         [s1 t1] (infer env e1)
         [s2 t2] (infer (update env :ctx sub s1) e2)
@@ -263,16 +202,16 @@
                        (t/Arrow t2 tv))]
     [(sub/compose s3 s2 s1) (sub tv s3)]))
 
-(defmethod infer ::syn/Let [{:keys [env]} [_ expr]]
-  (let [[x e1 e2] expr
+(defmethod infer Let [{:keys [env]} expr]
+  (let [[x e1 e2] (t/destructure expr)
         [s1 t1]   (infer env e1)
         env'      (update env :ctx sub s1)
         t         (generalize (:ctx env') t1)
         [s2 t2]   (infer (assoc-in env' [:ctx x] t) e2)]
     [(sub/compose s1 s2) t2]))
 
-(defmethod infer ::syn/If [env [_ expr]]
-  (let [[cond then else] expr
+(defmethod infer If [env expr]
+  (let [[cond then else] (t/destructure expr)
         [s1 t1] (infer env cond)
         [s2 t2] (infer env then)
         [s3 t3] (infer env else)
@@ -280,8 +219,16 @@
         s5      (unify t2 t3)]
     [(sub/compose s5 s4 s3 s2 s1) (sub t2 s5)]))
 
-(defmethod infer ::syn/Quo [env [_ expr]]
-  (prn env expr)
+(defmethod infer Seq [env expr]
+  (let [expr' (map (comp second (partial infer env)) (.-a expr))
+        s1    (unify-seq expr')
+        ]
+    [s1 (t/Sum 'Expr [])]))
+
+(defmethod infer Quo [env expr]
   (let [quoted? (:quoted? env)
         env'    (assoc env :quoted? true)]
-    (infer env' expr)))
+    (infer env' (.-a expr))))
+
+(infer {:ctx (t/map->Env {})}
+       (syn/parse ''(if True (+ 1 1) (- 1 1))))

@@ -1,21 +1,44 @@
 (ns lift.type.syntax
   (:require
-   [clojure.spec.alpha :as s]))
+   [clojure.spec.alpha :as s]
+   [lift.type.parse :refer [data]]
+   [lift.type.type :as t]))
 
 (def lits (atom {}))
 
 (defmacro def-literal [type parser]
   (let [litmap (assoc @lits (keyword (name type)) [parser type])
-        ormap  (map (fn [[k [s]]] [k s]) litmap)]
+        ormap  (map (fn [[k [s]]] [k s]) litmap)
+        summap (map (fn [[_ [_ t]]] [(symbol (str \L (name t))) t]) litmap)]
     `(do
        (reset! lits '~litmap)
        (s/def ::literal
-         (s/or ~@(apply concat ormap))))))
+         (s/or ~@(apply concat ormap)))
+       (data ~'Lit ~'= ~@(apply concat (interpose '[|] summap))))))
 
-(def-literal Char   char?)
-(def-literal Int    integer?)
-(def-literal Double double?)
-(def-literal String string?)
+(defmacro const [name parser]
+  `(let [t# (t/Const '~name)]
+     (swap! t/type-env assoc '~name t#)
+     (def-literal ~name ~parser)
+     t#))
+
+(const Char   char?)
+(const Int    integer?)
+(const Double double?)
+(const String string?)
+
+(data Symbol = Symbol String)
+(data List a = Nil | Cons a (List a))
+
+(data Expr
+  = Sym Symbol
+  | Lit Lit
+  | Quo Expr
+  | Seq List
+  | App Expr Expr
+  | Lam Symbol Expr
+  | Let Symbol Expr Expr
+  | If  Expr Expr Expr)
 
 (s/def ::var symbol?)
 
@@ -47,18 +70,17 @@
 (s/def ::vector
   (s/coll-of ::expr :kind vector?))
 
+(s/def ::qvec
+  (s/coll-of ::quoted :kind vector?))
+
 (s/def ::seq
-  (s/coll-of ::expr :kind seq?))
+  (s/coll-of ::quoted :kind seq?))
 
 (s/def ::quoted
   (s/or ::Lit ::literal
         ::Var ::var
-        ::Lam ::lambda
-        ::Let ::let
-        ::If  ::if
-        ::Quo ::quote
         ::Seq ::seq
-        ::Vec ::vector))
+        ::Vec ::qvec))
 
 (s/def ::expr
   (s/or ::Lit ::literal
@@ -72,28 +94,42 @@
 
 (defn curry [op args]
   (if (seq args)
-    (recur [::App [op (first args)]] (rest args))
+    (recur (App op (first args)) (rest args))
     op))
 
-(defn normalize [[syn-type node]]
-  (case syn-type
-    ::Lit [::Lit (->> node first (get @lits) second)]
-    ::Var [::Var node]
-    ::Lam [::Lam [(first (::bind node))
-                  (normalize (::expr node))]]
-    ::App (curry (normalize (::op node))
-                 (map normalize (::args node)))
-    ::Let [::Let [(first (::bind node))
-                  (normalize (second (::bind node)))
-                  (normalize (::expr node))]]
-    ::If  [::If [(normalize (::cond node))
-                 (normalize (::then node))
-                 (normalize (::else node))]]
-    ::Quo [::Quo (normalize (::expr node))]
-    ::Seq (curry [::Var 'Cons]
-                 (conj (mapv normalize node) [::Var 'Nil]))
-    ::Vec (curry [::Var 'VCons]
-                 (conj (mapv normalize node) [::Var 'VNil]))))
+(defmulti parse* (fn [[t _]] t))
+
+(defmethod parse* ::Lit [[_ node]]
+  (Lit (->> node first (get @lits) second)))
+
+(defmethod parse* ::Var [[_ node]]
+  (Sym node))
+
+(defmethod parse* ::Lam [[_ node]]
+  (Lam (first (::bind node)) (parse* (::expr node))))
+
+(defmethod parse* ::App [[_ node]]
+  (curry (parse* (::op node)) (map parse* (::args node))))
+
+(defmethod parse* ::Let [[_ node]]
+  (Let (first (::bind node))
+       (parse* (second (::bind node)))
+       (parse* (::expr node))))
+
+(defmethod parse* ::If  [[_ node]]
+  (If (parse* (::cond node))
+      (parse* (::then node))
+      (parse* (::else node))))
+
+(defmethod parse* ::Quo [[_ node]]
+  (Quo (parse* (::expr node))))
+;; Quote means don't eval. What does it mean to types?
+
+(defmethod parse* ::Seq [[_ node]]
+  (Seq (map parse* node)))
+
+(defmethod parse* ::Vec [[_ node]]
+  (curry (Sym 'VCons) (conj (mapv parse* node) (Sym 'VNil))))
 
 ;; what does quote mean?
 ;; it means that the var type should not be looked up,
@@ -110,4 +146,6 @@
       (do
         (s/explain ::expr expr)
         (throw (Exception. "Invalid Syntax")))
-      (normalize ast))))
+      (parse* ast))))
+
+(parse ''(+ 1 2))
