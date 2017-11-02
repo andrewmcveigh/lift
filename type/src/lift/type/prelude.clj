@@ -126,43 +126,84 @@
 
 (syn/parse '(def x 1))
 
+(tdef identity {x a} -> a)
+
+(tdef comp [{f} (a -> b) -> & fs [(b -> c)]]  a -> c)
+
+(tdef comp [{f (a -> b)} & {fs (b -> c)}] -> (a -> c))
+
+(tdef comp
+  ((a -> b) -> (& b -> c) -> (a -> c)))
+
+(tdef comp
+  ((a -> b) -> &(b+ -> c+) -> (a -> c+)))
+
+(tdef apply
+  ((& a+ -> b) -> & a+ -> [a+] -> b))
+
+(tdef juxt
+  ((a -> b) -> & (c+ -> d+) -> a -> [b c+ d+])
+  )
+
+(t/Arrow (t/Var 'a) (t/Var 'b))
+
+(a* n -> b)
+
+(& (a -> _) n) -> a -> (n-tuple n _)
+&       : variadic args
+_       : unlabeled type variable
+n       : collect number of variadic args
+n-tuple : tuple of size discerned by first arg
+n       : match 1st n
+_       : match unlabeled type variables
+
+(tdef juxt
+  ((a -> _)* n -> a -> [_* n]))
+
+(tdef apply
+  ((_* n -> b) -> _* (dec n) -> (List _) -> b))
+
+(tdef comp
+  ((_a -> _b)* -> (_a -> _b)))
+
+(tdef apply
+  (let [ftype (fn [n] (t/Arrow))] ((& (a+ n) -> b) -> & (a+ (dec n))))
+  )
+
+
+(infer {:ctx (t/map->Env {})}
+       (syn/parse ''(if True (+ 1 1) (- 1 1))))
+
+;;; TODO: Can't pass an Expr to a macro, because the Expr would need unwrapping
+;;; could it be a type class? Are we just talking about dynamic typing for
+;;; macros? Because there would be easier ways.
+;;; you can only do that with functions whose return type is compatible with
+;;; it's first argument
+;;; How about variadics then?
+;;; Can we, during/between syntax analysis & type-checking also check arities?
+;;; are variadic args easier to express when you have type-level Nat, and the
+;;; ability to make them implicit?
+
+;;; `&`: variadic
+;;; `[a-z]\+`: iterate through fresh type-vars that are not already taken
+;;; `a+` the first instance of var `a+` starts a matching cycle with other `a+`s
+;;; I.E., if the 1st `a+` matched a 5 arg fn we'd match:
+;;;   `a0 -> a1 -> a2 -> a3 -> a4` and the subsequent `a+`s would be forced to be
+;;;   `a0 -> a1 -> a2 -> a3 -> [a4]`
+
+;;; there's a difference between (& b -> c) and (& next -> n+1)
+
 ;; Should syntax know about special forms? My first thoughts are no, but then
 ;; should syntax be re-parsed when there's a macro?
 ;; should syntax be first parsed into seqs? - probably, that's more like how
 ;; lisps work
 
 ;; TODO: special forms need to have special syntax parser/rules
-;; TODO: macros receive Exprs
+;; TODO: macros receive Exprs - nope
 ;; TODO: type checker/system macros?
-
-;; (tdef quote a -> a)
-;; TODO: ^^ quote is a reader macro/special form
 ;; TODO: extensible parser/rules
-
-
-;; (check (Lam (Symbol "a")
-;;             (App (Var (Symbol "+"))
-;;                  (Lit (LInt 1)))))
-
-;; (check (Lit (LInt 1)))
-
-;; (data Point = Point {:x Int :y Int})
 ;; TODO: records^^
-
-;; [:record
-;;  {:type-cons [:lit-type-cons Point],
-;;   := =,
-;;   :rec-cons
-;;   {:type-name Point,
-;;    :recmap
-;;    {:x
-;;     [:parameterized
-;;      [:noparens {:type-name Just, :args [[:type-var a]]}]],
-;;     :y [:type-name Int]}}}]
-
-;; 2 versions of the constructor, one accepting a map, one accepting 2 args
-;; 2 ways of destructuring
-;; The problem is that map syntax ordering is weak
-;; (data Point = Point Int Int)
-
-;;; hash-map/array-map reading could be hacked
+;; TODO: type-system introspection - type errors at runtime
+;; TODO: variadic fn type syntax
+;; TODO: variadic fn type checking
+;; TODO: What things are really important to a lisp, that we can't ditch

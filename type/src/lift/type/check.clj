@@ -195,11 +195,13 @@
 
 (defmethod infer App [env expr]
   (let [[e1 e2] (t/destructure expr)
+        ;; TODO: If e1 is a macro, should we "simply" switch the type-checking
+        ;; rules here? How do we even know if e1 is a macro or not? That means
+        ;; we'd have to use the clojure environment.
         tv      (fresh)
         [s1 t1] (infer env e1)
         [s2 t2] (infer (update env :ctx sub s1) e2)
-        s3      (unify (sub t1 s2)
-                       (t/Arrow t2 tv))]
+        s3      (unify (sub t1 s2) (t/Arrow t2 tv))]
     [(sub/compose s3 s2 s1) (sub tv s3)]))
 
 (defmethod infer Let [{:keys [env]} expr]
@@ -222,6 +224,7 @@
 (defmethod infer Seq [env expr]
   (let [expr' (map (comp second (partial infer env)) (.-a expr))
         s1    (unify-seq expr')
+        ;; TODO: infer sequences^^?
         ]
     [s1 (t/Sum 'Expr [])]))
 
@@ -229,6 +232,3 @@
   (let [quoted? (:quoted? env)
         env'    (assoc env :quoted? true)]
     (infer env' (.-a expr))))
-
-(infer {:ctx (t/map->Env {})}
-       (syn/parse ''(if True (+ 1 1) (- 1 1))))

@@ -12,7 +12,9 @@
 
 (alias 'c 'clojure.core)
 
-(defmacro tdef [sym & sig]
+(defmacro tdef
+  {:style/indent :defn}
+  [sym & sig]
   `(let [sym# (u/resolve-sym '~sym)
          sig# (parse/type-signature '~sig)]
      (swap! t/expr-env assoc sym# (t/->Scheme (t/free sig#) sig#))

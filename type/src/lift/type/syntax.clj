@@ -67,19 +67,22 @@
 (s/def ::quote
   (s/and seq? (s/cat ::quot #{'quote} ::expr ::quoted)))
 
-(s/def ::vector
+(s/def ::vec
   (s/coll-of ::expr :kind vector?))
+
+(s/def ::seq
+  (s/coll-of ::expr :kind seq?))
 
 (s/def ::qvec
   (s/coll-of ::quoted :kind vector?))
 
-(s/def ::seq
+(s/def ::qseq
   (s/coll-of ::quoted :kind seq?))
 
 (s/def ::quoted
   (s/or ::Lit ::literal
         ::Var ::var
-        ::Seq ::seq
+        ::Seq ::qseq
         ::Vec ::qvec))
 
 (s/def ::expr
@@ -90,7 +93,7 @@
         ::If  ::if
         ::Quo ::quote
         ::App ::application
-        ::Vec ::vector))
+        ::Vec ::vec))
 
 (defn curry [op args]
   (if (seq args)
@@ -110,6 +113,9 @@
 
 (defmethod parse* ::App [[_ node]]
   (curry (parse* (::op node)) (map parse* (::args node))))
+
+;; a macro application is different to a function application
+;; so... what?
 
 (defmethod parse* ::Let [[_ node]]
   (Let (first (::bind node))
@@ -149,3 +155,10 @@
       (parse* ast))))
 
 (parse ''(+ 1 2))
+
+;; why type-check macros?
+;; the typical ops in lisp are list operations, should they not be type-checked
+;; within macros?
+;; what about other things like let, if, etc.? should we allow type errors here?
+;; how about the choice?
+;; what about if we have ~(+ x 1) in a macro? can we ensure this is well-typed?
